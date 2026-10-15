@@ -1,0 +1,11 @@
+{
+  "id": "ext_import_progress",
+  "name": "Импорт прогресса",
+  "description": "Переносит прогресс из оригинальной Magic Survival в Zombix. Кнопка «Настройки» открывает окно импорта.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": true
+}

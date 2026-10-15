@@ -1,6 +1,7 @@
 import type { ModDef } from "./api";
 import { addExternal } from "./core";
-import { DIR, chmod, log } from "./log";
+import { APP_DIR, DIR, PKG, chmod, log, mkdirs, readText, writeText } from "./log";
+import * as ui from "./uikit";
 import { ZipReader } from "./zip";
 
 /**
@@ -76,7 +77,11 @@ function readModZip(path: string): ModDef {
     if (!zip.has(mainName)) throw new Error(`нет скрипта ${mainName}`);
 
     const pending: ModDef[] = [];
-    (globalThis as any).ModKit = { define: (d: ModDef) => { pending.push(d); return d; } };
+    // ui — инструменты uikit.ts для своих экранов (окно рисуется на холсте игры: ui.kit.canvasTf)
+    (globalThis as any).ModKit = {
+        define: (d: ModDef) => { pending.push(d); return d; },
+        ui, pkg: PKG, appDir: APP_DIR, dir: DIR, log, mkdirs, chmod, readText, writeText,
+    };
     (0, eval)(zip.text(mainName));
     if (pending.length !== 1) throw new Error(`${mainName}: нужен один вызов ModKit.define(...)`);
     const def = pending[0];

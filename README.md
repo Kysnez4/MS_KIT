@@ -36,4 +36,5 @@ python modkit\build_standalone.py               # собрать автоном�
 ## Примеры
 
 - [Мод в формате zip](modkit/examples/wrath_x8/mod.json) — папка с `mod.json`, `main.js`, `icon.png`
+- [Импорт прогресса из оригинала в Zombix](modkit/examples/import_progress/main.js) — zip-мод с собственным окном (`ModKit.ui`)
 - [Примеры скриптов](modkit/examples/)
