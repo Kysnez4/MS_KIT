@@ -1,7 +1,9 @@
-# MS_KIT — ModKit для Magic Survival
+# MS_KIT — загрузчик модов для Magic Survival (Mod Loader)
+
+**Загрузчик и менеджер модов для Magic Survival на Android.** Mod loader / mod manager for *Magic Survival* (Android): install zip mods, no root, no PC — ready-made APK **Zombix** in Releases.
 
 Менеджер модов для Magic Survival: моды на TypeScript встраиваются в игру через `frida-gadget`, в игре появляется окно «Моды».
-Готовый автономный клон **Zombix** (без встроенных модов, моды ставятся zip-архивами) — в [Releases](https://github.com/Kysnez4/MS_KIT/releases). Готовые zip-моды: [gamelog](modkit/examples/gamelog.zip), [артефакты на старте](modkit/examples/auto_artifact.zip).
+Готовый автономный клон **Zombix** (без встроенных модов, моды ставятся zip-архивами) — в [Releases](https://github.com/Kysnez4/MS_KIT/releases). Готовые zip-моды — в релизе [Моды для Zombix](https://github.com/Kysnez4/MS_KIT/releases/tag/mods).
 
 ## Установка Zombix
 
