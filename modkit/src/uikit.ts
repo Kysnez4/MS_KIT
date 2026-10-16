@@ -85,11 +85,90 @@ export function label(parent: Il2Cpp.Object, text: string, x: number, y: number,
     return t;
 }
 
+const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let i = 0; i < 8; i++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+function crc32(b: Uint8Array, from = 0, to = b.length): number {
+    let c = 0xffffffff;
+    for (let i = from; i < to; i++) c = crcTable[(c ^ b[i]) & 255] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+}
+
+/** PNG (RGBA, «store»-deflate) со скруглённым белым прямоугольником w×h и антиалиасингом по краю. */
+function roundedPng(w: number, h: number, r: number): Uint8Array {
+    const stride = w * 4 + 1, raw = new Uint8Array(stride * h);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            // расстояние до угловой дуги: считаем только в угловых квадратах r×r
+            const dx = Math.max(r - x - 0.5, x + 0.5 - (w - r), 0), dy = Math.max(r - y - 0.5, y + 0.5 - (h - r), 0);
+            const cover = Math.max(0, Math.min(1, r + 0.5 - Math.hypot(dx, dy)));
+            const o = y * stride + 1 + x * 4;
+            raw[o] = raw[o + 1] = raw[o + 2] = 255; raw[o + 3] = Math.round(cover * 255);
+        }
+    }
+    let a = 1, bsum = 0;
+    for (const v of raw) { a = (a + v) % 65521; bsum = (bsum + a) % 65521; }
+    const blocks = Math.ceil(raw.length / 65535);
+    const z = new Uint8Array(2 + raw.length + blocks * 5 + 4);
+    let o = 0;
+    z[o++] = 0x78; z[o++] = 0x01;
+    for (let i = 0; i < blocks; i++) {
+        const len = Math.min(65535, raw.length - i * 65535);
+        z[o++] = i === blocks - 1 ? 1 : 0;
+        z[o++] = len & 255; z[o++] = len >> 8; z[o++] = ~len & 255; z[o++] = (~len >> 8) & 255;
+        z.set(raw.subarray(i * 65535, i * 65535 + len), o); o += len;
+    }
+    const adler = ((bsum << 16) | a) >>> 0;
+    z[o++] = adler >>> 24; z[o++] = (adler >>> 16) & 255; z[o++] = (adler >>> 8) & 255; z[o++] = adler & 255;
+    const out: number[] = [137, 80, 78, 71, 13, 10, 26, 10];
+    const chunk = (type: string, data: Uint8Array) => {
+        const buf = new Uint8Array(12 + data.length), dv = new DataView(buf.buffer);
+        dv.setUint32(0, data.length);
+        for (let i = 0; i < 4; i++) buf[4 + i] = type.charCodeAt(i);
+        buf.set(data, 8);
+        dv.setUint32(8 + data.length, crc32(buf, 4, 8 + data.length));
+        out.push(...buf);
+    };
+    const ihdr = new Uint8Array(13), hv = new DataView(ihdr.buffer);
+    hv.setUint32(0, w); hv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 6;
+    chunk("IHDR", ihdr); chunk("IDAT", z.subarray(0, o)); chunk("IEND", new Uint8Array(0));
+    return Uint8Array.from(out);
+}
+
+const roundTex = new Map<string, Il2Cpp.Object>();
+/** Текстура скруглённого прямоугольника (кэшируется по размеру); null, если собрать не удалось. */
+function roundedTexture(w: number, h: number, r: number): Il2Cpp.Object | null {
+    const key = `${w}x${h}x${r}`;
+    const old = roundTex.get(key);
+    if (old && !old.handle.add(0x10).readPointer().isNull()) return old;     // m_CachedPtr: не выгружена игрой
+    try {
+        const bytes = roundedPng(w, h, r);
+        const arr = Il2Cpp.array<number>(Il2Cpp.corlib.class("System.Byte"), bytes.length);
+        arr.handle.add(Il2Cpp.Array.headerSize).writeByteArray(bytes.buffer as ArrayBuffer);
+        const tex = cls(CORE, "UnityEngine.Texture2D").alloc();
+        tex.method(".ctor", 2).invoke(2, 2);
+        if (!cls("UnityEngine.ImageConversionModule", "UnityEngine.ImageConversion").method<boolean>("LoadImage", 2).invoke(tex, arr)) return null;
+        tex.method("set_hideFlags").invoke(61);
+        try { tex.ref(true); } catch (_) { /* без закрепления */ }
+        roundTex.set(key, tex);
+        return tex;
+    } catch (e) { log("скруглённая кнопка: " + e); return null; }
+}
+
+/** Радиус скругления кнопок в логических пикселях. */
+export const BUTTON_RADIUS = 16;
+
 export function button(parent: Il2Cpp.Object, text: string, x: number, y: number, w: number, h: number, size: number,
                 bg: [number, number, number, number], onClick: () => void): Il2Cpp.Object {
     const n = node("btn", parent);
     place(n.rt, x, y, w, h);
-    const img = image(n.go, ...bg);
+    let img: Il2Cpp.Object;
+    const tex = bg[3] >= 0.5 ? roundedTexture(Math.round(w), Math.round(h), Math.min(BUTTON_RADIUS, Math.floor(Math.min(w, h) / 2))) : null;
+    if (tex) {
+        img = add(n.go, UI, "UnityEngine.UI.RawImage");
+        img.method("set_texture").invoke(tex);
+        img.method("set_color").invoke(color(...bg));
+    } else {
+        img = image(n.go, ...bg);                      // невидимые кнопки-«хитбоксы» и запасной вариант
+    }
     const btn = add(n.go, UI, "UnityEngine.UI.Button");
     btn.method("set_targetGraphic").invoke(img);
     const action = Il2Cpp.delegate(cls(CORE, "UnityEngine.Events.UnityAction"), () => {
@@ -227,6 +306,88 @@ export function openChecklist(o: ChecklistOptions): Il2Cpp.Object {
             y += 82;
         }
         y += 14;
+    }
+    c.rt.method("set_sizeDelta").invoke(v2(W * kit.k, (y + 40) * kit.k));
+    return win.go;
+}
+
+// ---------------------------------------------------------------- окно с числовыми полями
+
+export interface NumberFormField { key: string; min: number; max: number; decimal?: boolean }
+export interface NumberFormRow { label: string; fields: NumberFormField[] }
+export interface NumberFormOptions {
+    /** Имя объекта окна: повторное открытие с тем же именем заменяет прежнее окно. */
+    name: string;
+    title: string;
+    subtitle?: string;
+    /** Подписи над столбцами полей (по одной на поле строки). */
+    columns?: string[];
+    rows: NumberFormRow[];
+    get: (key: string) => number;
+    set: (key: string, value: number) => void;
+}
+
+/**
+ * Окно «таблица чисел» на весь холст, с прокруткой: строка = подпись + несколько полей ввода. Значение зажимается в [min, max]
+ * и сразу передаётся в `set`. Вызывать на главном потоке.
+ */
+export function openNumberForm(o: NumberFormOptions): Il2Cpp.Object {
+    const destroyGo = (go: Il2Cpp.Object) => { try { cls(CORE, "UnityEngine.Object").method("Destroy", 1).invoke(go); } catch (_) { /* уже удалён */ } };
+    const prev = checklistWindows.get(o.name);
+    if (prev) destroyGo(prev);
+
+    const win = node(o.name, kit.canvasTf);
+    checklistWindows.set(o.name, win.go);
+    win.rt.method("set_anchorMin").invoke(v2(0, 0));
+    win.rt.method("set_anchorMax").invoke(v2(1, 1));
+    win.rt.method("set_offsetMin").invoke(v2(0, 0));
+    win.rt.method("set_offsetMax").invoke(v2(0, 0));
+    image(win.go, 0.02, 0.03, 0.06, 1);
+
+    tint(label(win.rt, o.title, 0, 90, LOGICAL_W, 80, 46, 4), gold());
+    if (o.subtitle) tint(label(win.rt, o.subtitle, 30, 170, LOGICAL_W - 60, 60, 21, 4), color(0.7, 0.75, 0.85, 1));
+    button(win.rt, "X", LOGICAL_W - 100, 60, 80, 80, 54, [0, 0, 0, 0.01], () => { win.go.method("SetActive").invoke(false); });
+
+    const top = o.subtitle ? 240 : 190;
+    const W = LOGICAL_W - 60;
+    const view = node("view", win.rt);
+    place(view.rt, 30, top, W, kit.screenH - top - 30);
+    image(view.go, 0, 0, 0, 0.01);
+    add(view.go, UI, "UnityEngine.UI.RectMask2D");
+    const c = node("content", view.rt);
+    place(c.rt, 0, 0, W, 100);
+    const sr = add(view.go, UI, "UnityEngine.UI.ScrollRect");
+    sr.method("set_content").invoke(c.rt);
+    sr.method("set_viewport").invoke(view.rt);
+    sr.method("set_horizontal").invoke(false);
+    sr.method("set_vertical").invoke(true);
+    sr.method("set_movementType").invoke(2);
+    sr.method("set_scrollSensitivity").invoke(30);
+
+    const nf = Math.max(1, ...o.rows.map(r => r.fields.length));
+    const labelW = 220, gap = 16;
+    const fw = (W - labelW - 20 - gap * nf) / nf;
+    const fx = (i: number) => labelW + 20 + i * (fw + gap);
+    let y = 0;
+    if (o.columns) {
+        o.columns.forEach((t, i) => tint(label(c.rt, t, fx(i), y, fw, 50, 24, 4), color(0.55, 0.8, 1, 1)));
+        y += 56;
+    }
+    for (const r of o.rows) {
+        const row = node("row", c.rt);
+        place(row.rt, 0, y, W, 76);
+        image(row.go, 0.08, 0.10, 0.15, 1);
+        tint(label(row.rt, r.label, 20, 0, labelW, 76, 24, 3), color(0.92, 0.92, 0.92, 1));
+        r.fields.forEach((f, i) => {
+            const input = numberField(row.rt, fmt(o.get(f.key)), fx(i), 8, fw, 60, 32, !!f.decimal, text => {
+                let v = parseFloat(text.replace(",", "."));
+                if (!isFinite(v)) v = o.get(f.key);
+                v = Math.min(f.max, Math.max(f.min, f.decimal ? v : Math.round(v)));
+                if (v !== o.get(f.key)) o.set(f.key, v);
+                input.method("set_text").invoke(str(fmt(v)));
+            });
+        });
+        y += 82;
     }
     c.rt.method("set_sizeDelta").invoke(v2(W * kit.k, (y + 40) * kit.k));
     return win.go;

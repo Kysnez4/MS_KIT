@@ -1,16 +1,19 @@
 import type { ModDef } from "./api";
-import { addExternal } from "./core";
+import { addExternal, mods } from "./core";
 import { APP_DIR, DIR, PKG, chmod, log, mkdirs, readText, writeText } from "./log";
 import * as ui from "./uikit";
+import * as data from "./data";
 import { ZipReader } from "./zip";
 
 /**
- * Внешние моды: архивы .zip, подгружаются без пересборки — при старте и по кнопке «+» в окне «Моды».
+ * Внешние моды: архивы .zip. При старте грузятся установленные (files/modkit/mods); новые ищет кнопка «+»
+ * в Download/ModKit и Download (только архивы с mod.json), выбранный копируется в files/modkit/mods.
  * Внутри: `mod.json` (META: id, название, описание, иконка, скриншоты...) и скрипт с `ModKit.define({...})` — см. docs/README.md.
- * Папки: Android/data/<пакет>/files/modkit/mods и Download/ModKit.
  */
 // Download/ читается только при выданном «доступе ко всем файлам» (install.ps1 выдаёт его через appops).
-export const MODS_DIRS = [DIR + "/mods", "/sdcard/Download/ModKit"];
+export const MODS_DIRS = [DIR + "/mods"];
+/** Где «+» ищет архивы с mod.json (только по нажатию). Установленные копируются в MODS_DIRS[0]. */
+export const SEARCH_DIRS = ["/sdcard/Download/ModKit", "/sdcard/Download"];
 
 function libc(name: string): NativePointer {
     return Process.getModuleByName("libc.so").getExportByName(name);
@@ -65,6 +68,54 @@ export function loadExternalMods(): LoadResult {
     return res;
 }
 
+export interface Candidate { path: string; file: string; id: string; name: string; version?: string; author?: string; installed: boolean }
+const MAX_SCAN_BYTES = 40 * 1024 * 1024;
+
+/** Ищет в папках загрузок .zip с mod.json (содержимое скрипта не выполняется). */
+export function findCandidates(): Candidate[] {
+    const out: Candidate[] = [];
+    const seen = new Set<string>();
+    for (const dirPath of SEARCH_DIRS) {
+        for (const file of listZips(dirPath)) {
+            const path = dirPath + "/" + file;
+            if (seen.has(path)) continue;
+            seen.add(path);
+            try {
+                const bytes = File.readAllBytes(path);
+                if (bytes.byteLength > MAX_SCAN_BYTES) continue;
+                const zip = new ZipReader(new Uint8Array(bytes));
+                if (!zip.has("mod.json")) continue;
+                const meta = JSON.parse(zip.text("mod.json"));
+                const id = String(meta.id ?? "");
+                if (!id) continue;
+                out.push({
+                    path, file, id, name: String(meta.name ?? id),
+                    version: meta.version ? String(meta.version) : undefined,
+                    author: meta.author ? String(meta.author) : undefined,
+                    installed: mods.some(m => m.def.id === id),
+                });
+            } catch (_) { /* не мод или битый архив */ }
+        }
+    }
+    return out;
+}
+
+/** Подключает мод из найденного архива и копирует его в папку установленных. Бросает исключение с причиной. */
+export function installCandidate(c: Candidate): string {
+    const def = readModZip(c.path);
+    if (!addExternal(def)) throw new Error("мод с таким id уже установлен");
+    try {
+        mkdirs(MODS_DIRS[0]);
+        const dest = MODS_DIRS[0] + "/" + c.file;
+        const f = new File(dest, "wb");
+        f.write(File.readAllBytes(c.path));
+        f.close();
+        chmod(dest, 0o666);
+    } catch (e) { log(`копия ${c.file} в mods не удалась: ${e} (мод работает до перезапуска)`); }
+    log(`мод установлен: ${def.id} (${c.path})`);
+    return def.name;
+}
+
 const strList = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
 /** Разбирает архив мода: mod.json + скрипт + картинки. Бросает исключение с понятным текстом. */
@@ -77,10 +128,10 @@ function readModZip(path: string): ModDef {
     if (!zip.has(mainName)) throw new Error(`нет скрипта ${mainName}`);
 
     const pending: ModDef[] = [];
-    // ui — инструменты uikit.ts для своих экранов (окно рисуется на холсте игры: ui.kit.canvasTf)
+    // ui — инструменты uikit.ts для своих экранов (окно рисуется на холсте игры: ui.kit.canvasTf); data — таблицы игры (data.ts: Table и др.)
     (globalThis as any).ModKit = {
         define: (d: ModDef) => { pending.push(d); return d; },
-        ui, pkg: PKG, appDir: APP_DIR, dir: DIR, log, mkdirs, chmod, readText, writeText,
+        ui, data, pkg: PKG, appDir: APP_DIR, dir: DIR, log, mkdirs, chmod, readText, writeText,
     };
     (0, eval)(zip.text(mainName));
     if (pending.length !== 1) throw new Error(`${mainName}: нужен один вызов ModKit.define(...)`);

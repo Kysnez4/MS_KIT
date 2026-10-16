@@ -12,7 +12,7 @@ const allFiles = readdirSync(modsDir).filter(f => f.endsWith(".ts") && !f.starts
 // --only id1,id2  — собрать только эти моды (имена файлов без .ts); --out путь — куда писать (по умолчанию modkit/out/loader.js)
 const args = process.argv.slice(2);
 const take = name => { const i = args.indexOf(name); return i < 0 ? null : args.splice(i, 2)[1]; };
-const only = take("--only")?.split(",");
+const only = take("--only")?.split(",").filter(Boolean);
 const outFile = take("--out") ?? "modkit/out/loader.js";
 const files = only ? allFiles.filter(f => only.includes(f.replace(/\.ts$/, ""))) : allFiles;
 if (only && files.length !== only.length) throw new Error(`не найдены моды: ${only.filter(o => !allFiles.includes(o + ".ts"))}`);

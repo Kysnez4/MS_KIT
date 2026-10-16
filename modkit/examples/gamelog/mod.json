@@ -1,0 +1,11 @@
+{
+  "id": "gamelog",
+  "name": "Журнал игры (отладка)",
+  "description": "Пишет в gamelog.txt все изменения значений и вызовы методов. Группы и исключения — кнопка «Настройки». Замедляет игру.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": false
+}

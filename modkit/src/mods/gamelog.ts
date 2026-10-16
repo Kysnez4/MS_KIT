@@ -3,7 +3,6 @@ import { DIR, chmod644 } from "../log";
 import { openChecklist } from "../uikit";
 
 const OUT = DIR + "/gamelog.txt";
-const SCALARS = new Set(["System.Int32", "System.Single", "System.Double", "System.Boolean", "System.Int64", "System.Int16", "System.Byte", "System.UInt32"]);
 const OBSCURED = new Set(["ObscuredInt", "ObscuredFloat", "ObscuredDouble", "ObscuredBool", "ObscuredLong", "ObscuredShort", "ObscuredByte", "ObscuredUInt"]);
 const SKIP_FIELD = /^(LSoundList_|Array_Float_AutoSave|Array_Int_AutoSave)/;
 /** Классы, по полям которых строятся снимки состояния. */
@@ -43,19 +42,24 @@ const EXCLUDES: Array<{ key: string; label: string; value?: string; call?: strin
 ];
 const NOISY_CHANGES = 20;     // изменений за окно — и поле считается «шумным» (таймеры, координаты)
 const WINDOW_MS = 10000;
-const HOT_CALLS_PER_WINDOW = 400;
+const HOT_CALLS_PER_FLUSH = 400;
+const CALLS_FLUSH_MS = 2000;
+/** Снимок не должен занимать больше доли времени: следующий — не раньше, чем через столько длительностей предыдущего. */
+const TICK_COOLDOWN = 4;
 
 function round(v: number): number {
     return Math.round(v * 10000) / 10000;
 }
 
-/** Читает скалярное поле (в т.ч. Obscured*). null — тип не поддерживается. */
-function readScalar(f: Il2Cpp.Field, typeName: string): string | null {
+/** Читает скалярное поле (в т.ч. Obscured*) через мост IL2CPP — медленный путь, только для Obscured*, enum и констант. null — тип не поддерживается. */
+function readSlow(f: Il2Cpp.Field): string | null {
+    const t = f.type;
+    if (t.class.isEnum) return String(f.value);
     const v = f.value as any;
     if (typeof v === "number") return String(round(v));
     if (typeof v === "boolean") return v ? "true" : "false";
     if (typeof v === "bigint") return v.toString();
-    if (v && typeof v === "object" && OBSCURED.has(typeName.split(".").pop()!)) {
+    if (v && typeof v === "object" && OBSCURED.has(t.name.split(".").pop()!)) {
         const d = v.box().method("GetDecrypted").invoke();
         return typeof d === "number" ? String(round(d)) : String(d);
     }
@@ -77,43 +81,35 @@ function elementReader(typeName: string): { size: number; parse: (buf: ArrayBuff
     }
 }
 
-/** Числа из массива IL2CPP одним чтением памяти (данные идут с отступа 0x20), а не по элементу через вызовы. */
-function readBlock(arr: Il2Cpp.Array<any>, count: number, elem: string): string | null {
-    const r = elementReader(elem);
-    if (!r) return null;
-    if (count > 400) return `len=${count}`;
-    if (count === 0) return "[]";
-    const buf = arr.handle.add(0x20).readByteArray(count * r.size);
-    return buf ? "[" + r.parse(buf).join(",") + "]" : null;
-}
+/** Скалярные типы, читаемые прямо из блока памяти: размер и разбор значения. */
+const SCALAR_READERS: Record<string, { size: number; read: (dv: DataView, o: number) => string }> = {
+    "System.Int32": { size: 4, read: (dv, o) => String(dv.getInt32(o, true)) },
+    "System.UInt32": { size: 4, read: (dv, o) => String(dv.getUint32(o, true)) },
+    "System.Single": { size: 4, read: (dv, o) => String(round(dv.getFloat32(o, true))) },
+    "System.Double": { size: 8, read: (dv, o) => String(round(dv.getFloat64(o, true))) },
+    "System.Boolean": { size: 1, read: (dv, o) => dv.getUint8(o) !== 0 ? "true" : "false" },
+    "System.Byte": { size: 1, read: (dv, o) => String(dv.getUint8(o)) },
+    "System.Int16": { size: 2, read: (dv, o) => String(dv.getInt16(o, true)) },
+    "System.Int64": { size: 8, read: (dv, o) => dv.getBigInt64(o, true).toString() },
+};
 
-function readArray(f: Il2Cpp.Field): string | null {
-    const v = f.value as any;
-    if (!v || v.isNull?.()) return "null";
-    const arr = v as Il2Cpp.Array<any>;
-    return readBlock(arr, arr.length, f.type.name.replace(/\[\]$/, ""));
-}
+const ARRAY_LENGTH = 0x18;      // Il2CppArray: max_length
+const ARRAY_DATA = 0x20;        // данные массива идут с этого смещения
+const MAX_ELEMS = 400;          // длиннее — пишем только длину
+const CACHED_PTR = 0x10;        // UnityEngine.Object.m_CachedPtr: 0 у уничтоженного объекта
 
-function readList(f: Il2Cpp.Field): string | null {
-    const v = f.value as any;
-    if (!v || v.isNull?.()) return "null";
-    const m = /^System\.Collections\.Generic\.List<(System\.\w+)>$/.exec(f.type.name);
-    if (!m || !elementReader(m[1])) return null;
-    const n = v.field("_size").value as number;
-    if (n > 400) return `count=${n}`;
-    const items = v.field("_items").value as Il2Cpp.Array<any>;
-    return n === 0 ? "[]" : readBlock(items, n, m[1]);
-}
-
-function readField(f: Il2Cpp.Field): string | null {
-    if (SKIP_FIELD.test(f.name)) return null;
-    const t = f.type;
-    const tn = t.name;
-    if (SCALARS.has(tn) || t.class.namespace === "CodeStage.AntiCheat.ObscuredTypes") return readScalar(f, tn);
-    if (t.class.isEnum) return String(f.value);
-    if (tn.endsWith("[]")) return readArray(f);
-    if (tn.startsWith("System.Collections.Generic.List<")) return readList(f);
-    return null;
+/** Одинаковы ли два блока памяти (по 4 байта, хвост по байтам). */
+function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+    const n = a.byteLength;
+    if (n !== b.byteLength) return false;
+    const w = n >> 2;
+    const a32 = new Uint32Array(a, 0, w), b32 = new Uint32Array(b, 0, w);
+    for (let i = 0; i < w; i++) if (a32[i] !== b32[i]) return false;
+    if (n & 3) {
+        const a8 = new Uint8Array(a), b8 = new Uint8Array(b);
+        for (let i = w << 2; i < n; i++) if (a8[i] !== b8[i]) return false;
+    }
+    return true;
 }
 
 /** К какой группе настроек относится поле источника снимка. */
@@ -126,6 +122,47 @@ function groupOf(label: string, f: Il2Cpp.Field): string {
     if (label === "hero") return f.name.startsWith("UnitApply_") || f.name.startsWith("BUnitApply_") ? "g_heroStat" : "g_heroOther";
     if (label === "C_Battle_Manager") return "g_mgrBattle";
     return "g_mgrAbility";
+}
+
+/**
+ * Поле для снимка. Скаляры сравниваются по байтам блока памяти, разбор значения — только у изменившихся.
+ * Массивы и списки читаются по указателю (содержимое меняется на месте). Obscured*, enum и константы — через мост, только при изменении.
+ */
+interface Spec {
+    key: string;
+    group: string;
+    field: Il2Cpp.Field;
+    off: number;
+    size: number;
+    kind: "scalar" | "slow" | "const" | "array" | "list";
+    read?: (dv: DataView, o: number) => string;
+    elem?: { size: number; parse: (buf: ArrayBuffer) => string[] };
+    last?: ArrayBuffer;
+}
+
+interface Source {
+    label: string;
+    isStatic: boolean;
+    cls: Il2Cpp.Class;
+    /** Указатель на объект-владельца (null — сейчас недоступен). Для статических — база статических полей. */
+    base: () => NativePointer | null;
+    specs: Spec[];
+    lo: number;
+    hi: number;
+    built: boolean;
+    active: Spec[];
+    sig: string;
+    prev: ArrayBuffer | null;
+    prevBase: string;
+}
+
+interface Hook {
+    name: string;
+    n: number;
+    lastN: number;
+    win: number;
+    skip: boolean;
+    listener: InvocationListener | null;
 }
 
 export default defineMod({
@@ -167,6 +204,9 @@ export default defineMod({
         const excludedCalls = () => EXCLUDES.filter(e => e.call && ctx.settings[e.key] !== 0).map(e => e.call!);
         let exValues = excludedValues();
         let exCalls = excludedCalls();
+        let callsOn = on("g_calls");
+        let artOn = on("g_art");
+        let statusOn = on("g_status");
         const tickMs = () => Math.max(300, Math.round((ctx.settings.interval ?? 0.7) * 1000));
         w(`настройки: выключено групп ${GROUPS.filter(g => !on(g.key)).length}, исключений ${exValues.size + exCalls.length}, интервал ${tickMs()} мс`);
 
@@ -183,102 +223,223 @@ export default defineMod({
         grab("V_Ability_Manager", "Update", 0);
 
         // ---- снимки состояния ----
-        type Source = { label: string; fields: Il2Cpp.Field[]; holder: () => Il2Cpp.Object | null };
+        const fresh = (c: string): NativePointer | null => {
+            const s = seen[c];
+            return s && Date.now() - s.at < 2000 ? s.ptr : null;
+        };
         const sources: Source[] = [];
-        const zdb = ctx.cls("Z_Database");
-        sources.push({ label: "Z_Database", fields: zdb.fields.filter(f => f.isStatic), holder: () => null });
-        for (const c of INSTANCE_CLASSES) {
-            const k = ctx.cls(c);
-            sources.push({
-                label: c,
-                fields: k.fields.filter(f => !f.isStatic),
-                holder: () => {
-                    const s = seen[c];
-                    return s && Date.now() - s.at < 2000 ? new Il2Cpp.Object(s.ptr) : null;
-                },
-            });
-        }
-        const heroCls = ctx.cls("C_Battle_AllyUnit");
-        sources.push({
-            label: "hero",
-            fields: heroCls.fields.filter(f => !f.isStatic),
-            holder: () => {
-                const s = seen["C_Battle_Manager"];
-                if (!s || Date.now() - s.at > 2000) return null;
-                const field = new Il2Cpp.Object(s.ptr).field<Il2Cpp.Object>("Obj_FieldAllyUnit").value;
-                if (field.isNull()) return null;
-                const tf = field.method<Il2Cpp.Object>("get_transform").invoke();
-                const type = heroCls.type.object;
-                for (let i = 0; i < tf.method<number>("get_childCount").invoke(); i++) {
-                    const go = tf.method<Il2Cpp.Object>("GetChild").invoke(i).method<Il2Cpp.Object>("get_gameObject").invoke();
-                    const c = go.method<Il2Cpp.Object>("GetComponent", 1).invoke(type);
-                    if (c && !c.isNull()) return c;
-                }
-                return null;
-            },
+        const mkSource = (label: string, cls: Il2Cpp.Class, isStatic: boolean, base: () => NativePointer | null): Source => ({
+            label, isStatic, cls, base, specs: [], lo: 0, hi: 0, built: false, active: [], sig: "", prev: null, prevBase: "",
         });
+        const zdb = ctx.cls("Z_Database");
+        sources.push(mkSource("Z_Database", zdb, true, () => zdb.staticFieldsData));
+        for (const c of INSTANCE_CLASSES) sources.push(mkSource(c, ctx.cls(c), false, () => fresh(c)));
 
-        const prev = new Map<string, string>();
+        // герой — компонент среди детей объекта поля менеджера боя; ищем через Unity один раз и кешируем, пока объект жив
+        const heroCls = ctx.cls("C_Battle_AllyUnit");
+        const unitOff = ctx.cls("C_Battle_Manager").field("Obj_FieldAllyUnit").offset;
+        let heroUnit = "";
+        let heroPtr: NativePointer | null = null;
+        const findHero = (): NativePointer | null => {
+            const mgr = fresh("C_Battle_Manager");
+            if (!mgr) return null;
+            const unitPtr = mgr.add(unitOff).readPointer();
+            if (unitPtr.isNull()) return null;
+            if (heroPtr && heroUnit === unitPtr.toString() && !heroPtr.add(CACHED_PTR).readPointer().isNull()) return heroPtr;
+            heroPtr = null;
+            const tf = new Il2Cpp.Object(unitPtr).method<Il2Cpp.Object>("get_transform").invoke();
+            const type = heroCls.type.object;
+            for (let i = 0; i < tf.method<number>("get_childCount").invoke(); i++) {
+                const go = tf.method<Il2Cpp.Object>("GetChild").invoke(i).method<Il2Cpp.Object>("get_gameObject").invoke();
+                const c = go.method<Il2Cpp.Object>("GetComponent", 1).invoke(type);
+                if (c && !c.isNull()) { heroPtr = c.handle; heroUnit = unitPtr.toString(); break; }
+            }
+            return heroPtr;
+        };
+        sources.push(mkSource("hero", heroCls, false, findHero));
+
+        let listOffsets: { items: number; size: number } | null = null;
+
+        /** Классифицирует поля источника и вычисляет границы блока памяти. Один раз на источник. */
+        const build = (src: Source) => {
+            const t = Date.now();
+            for (const f of src.cls.fields) {
+                if (f.isStatic !== src.isStatic || SKIP_FIELD.test(f.name)) continue;
+                let spec: Spec | null = null;
+                try {
+                    const ft = f.type, tn = ft.name;
+                    const base = { key: `${src.label}.${f.name}`, group: groupOf(src.label, f), field: f, off: f.offset };
+                    if (src.isStatic && (f.isLiteral || f.isThreadStatic)) {
+                        spec = { ...base, size: 0, kind: "const" };
+                    } else if (SCALAR_READERS[tn]) {
+                        spec = { ...base, size: SCALAR_READERS[tn].size, kind: "scalar", read: SCALAR_READERS[tn].read };
+                    } else if (ft.class.namespace === "CodeStage.AntiCheat.ObscuredTypes" || ft.class.isEnum) {
+                        spec = { ...base, size: ft.class.valueTypeSize, kind: "slow" };
+                    } else if (tn.endsWith("[]")) {
+                        const elem = elementReader(tn.replace(/\[\]$/, ""));
+                        if (elem) spec = { ...base, size: Process.pointerSize, kind: "array", elem };
+                    } else if (tn.startsWith("System.Collections.Generic.List<")) {
+                        const m = /^System\.Collections\.Generic\.List<(System\.\w+)>$/.exec(tn);
+                        const elem = m && elementReader(m[1]);
+                        if (elem) {
+                            spec = { ...base, size: Process.pointerSize, kind: "list", elem };
+                            listOffsets ??= { items: ft.class.field("_items").offset, size: ft.class.field("_size").offset };
+                        }
+                    }
+                } catch (_) { /* тип без поддержки */ }
+                if (spec && spec.kind !== "const" && (spec.off < 0 || spec.size <= 0)) spec = null;
+                if (spec) src.specs.push(spec);
+            }
+            const mem = src.specs.filter(s => s.kind !== "const");
+            src.lo = mem.length ? Math.min(...mem.map(s => s.off)) & ~3 : 0;
+            src.hi = mem.length ? (mem.reduce((m, s) => Math.max(m, s.off + s.size), 0) + 3) & ~3 : 0;
+            src.built = true;
+            w(`подготовка ${src.label}: полей ${src.specs.length}, блок ${src.hi - src.lo} байт, ${Date.now() - t} мс`);
+            // самопроверка: смещения статических полей должны давать те же значения, что и мост IL2CPP
+            if (src.isStatic) {
+                const base = src.base()!;
+                const dv = new DataView(base.add(src.lo).readByteArray(src.hi - src.lo)!);
+                let bad = 0, checked = 0;
+                for (const s of src.specs) {
+                    if (s.kind !== "scalar" || checked >= 30) continue;
+                    const ref = readSlow(s.field);
+                    if (ref === null) continue;                        // мост не умеет читать (например Int64)
+                    checked++;
+                    if (s.read!(dv, s.off - src.lo) !== ref) bad++;
+                }
+                if (bad) {
+                    w(`ОШИБКА: смещения статических полей ${src.label} не совпали с мостом (${bad} из ${checked}), источник отключён`);
+                    src.specs = [];
+                }
+            }
+        };
+
+        const prevVals = new Map<string, string>();
         const winChanges = new Map<string, number>();
         const muted = new Set<string>();
-        let first = new Set<string>();
         let windowStart = Date.now();
+        let sigAll = "";
+
+        /** Содержимое массива/списка (null — не поддерживается, undefined — не изменилось с прошлого раза). */
+        const readRef = (s: Spec, ptr: NativePointer, force: boolean): string | undefined => {
+            let items: NativePointer, n: number, label: string;
+            if (ptr.isNull()) { s.last = undefined; return "null"; }
+            if (s.kind === "array") {
+                n = ptr.add(ARRAY_LENGTH).readU32();
+                items = ptr;
+                label = "len";
+            } else {
+                n = ptr.add(listOffsets!.size).readS32();
+                items = ptr.add(listOffsets!.items).readPointer();
+                label = "count";
+            }
+            if (n > MAX_ELEMS) { s.last = undefined; return `${label}=${n}`; }
+            if (n === 0 || items.isNull()) { s.last = undefined; return "[]"; }
+            const buf = items.add(ARRAY_DATA).readByteArray(n * s.elem!.size);
+            if (!buf) return undefined;
+            const same = !force && s.last !== undefined && sameBytes(buf, s.last);
+            s.last = buf;
+            return same ? undefined : "[" + s.elem!.parse(buf).join(",") + "]";
+        };
+
+        const snapshot = (src: Source) => {
+            if (!src.built) build(src);
+            if (src.sig !== sigAll) {                                   // группы/исключения изменились: пересчёт, значения сверяются заново
+                src.sig = sigAll;
+                src.active = src.specs.filter(s => on(s.group) && !exValues.has(s.key));
+                src.prev = null;
+            }
+            if (!src.active.length || !src.specs.length) return;
+            const base = src.base();
+            if (!base) { src.prev = null; src.prevBase = ""; return; }
+            const baseStr = base.toString();
+            if (baseStr !== src.prevBase) { src.prev = null; src.prevBase = baseStr; }   // другой объект: сверяем значения целиком
+            const raw = base.add(src.lo).readByteArray(src.hi - src.lo);
+            if (!raw) { src.prev = null; return; }
+            const dv = new DataView(raw);
+            const c32 = new Uint32Array(raw, 0, raw.byteLength >> 2);
+            const prev = src.prev;
+            const p32 = prev ? new Uint32Array(prev, 0, prev.byteLength >> 2) : null;
+            const p8 = prev ? new Uint8Array(prev) : null;
+            const c8 = prev ? new Uint8Array(raw) : null;
+            const force = !prev;
+            let baseline = 0;
+
+            const emit = (key: string, val: string) => {
+                const old = prevVals.get(key);
+                prevVals.set(key, val);
+                if (old === undefined) {
+                    w(`INIT ${key} = ${val}`);
+                    baseline++;
+                    return;
+                }
+                if (old === val) return;
+                const n = (winChanges.get(key) ?? 0) + 1;
+                winChanges.set(key, n);
+                if (muted.has(key)) return;
+                if (n > NOISY_CHANGES) {
+                    muted.add(key);
+                    w(`NOISY ${key} (часто меняется, дальше не пишу), последнее: ${val}`);
+                    return;
+                }
+                w(`SET ${key}: ${old} -> ${val}`);
+            };
+
+            for (const s of src.active) {
+                try {
+                    const o = s.off - src.lo;
+                    if (s.kind === "array" || s.kind === "list") {
+                        const val = readRef(s, base.add(s.off).readPointer(), force);
+                        if (val !== undefined) emit(s.key, val);
+                        continue;
+                    }
+                    if (s.kind === "const") {
+                        if (force) { const v = readSlow(s.field); if (v !== null) emit(s.key, v); }
+                        continue;
+                    }
+                    if (!force) {                                       // изменились ли байты поля
+                        let diff = false;
+                        if (s.size === 4 && (o & 3) === 0) diff = c32[o >> 2] !== p32![o >> 2];
+                        else for (let i = 0; i < s.size; i++) if (c8![o + i] !== p8![o + i]) { diff = true; break; }
+                        if (!diff) continue;
+                    }
+                    let val: string | null;
+                    if (s.kind === "scalar") val = s.read!(dv, o);
+                    else val = readSlow(src.isStatic ? s.field : (s.field as any).bind(new Il2Cpp.Object(base)));
+                    if (val !== null) emit(s.key, val);
+                } catch (_) { /* поле недоступно */ }
+            }
+            src.prev = raw;
+            if (baseline) w(`-- ${src.label}: начальных значений ${baseline}`);
+        };
 
         const tick = () => {
             exValues = excludedValues();                                 // настройки могли измениться на экране «Настройки»
             exCalls = excludedCalls();
+            callsOn = on("g_calls");
+            artOn = on("g_art");
+            statusOn = on("g_status");
+            refreshCalls();
+            sigAll = GROUPS.map(g => on(g.key) ? 1 : 0).join("") + "|" + [...exValues].join(",");
             if (Date.now() - windowStart > WINDOW_MS) {
                 windowStart = Date.now();
                 winChanges.clear();
             }
             for (const src of sources) {
-                let holder: Il2Cpp.Object | null = null;
-                if (!src.fields.length) continue;
-                if (src.label !== "Z_Database") {
-                    holder = src.holder();
-                    if (!holder) { first.delete(src.label); continue; }
-                }
-                const fresh = !first.has(src.label);
-                first.add(src.label);
-                let baseline = 0;
-                for (const f of src.fields) {
-                    if (!on(groupOf(src.label, f))) continue;                    // группа выключена: поле даже не читаем
-                    let val: string | null;
-                    try { val = readField(holder ? holder.field(f.name) : f); } catch (_) { continue; }
-                    if (val === null) continue;
-                    const key = `${src.label}.${f.name}`;
-                    if (exValues.has(key)) continue;
-                    const old = prev.get(key);
-                    prev.set(key, val);
-                    if (old === undefined) {
-                        w(`INIT ${key} = ${val}`);
-                        baseline++;
-                        continue;
-                    }
-                    if (old === val) continue;
-                    const n = (winChanges.get(key) ?? 0) + 1;
-                    winChanges.set(key, n);
-                    if (muted.has(key)) continue;
-                    if (n > NOISY_CHANGES) {
-                        muted.add(key);
-                        w(`NOISY ${key} (часто меняется, дальше не пишу), последнее: ${val}`);
-                        continue;
-                    }
-                    w(`SET ${key}: ${old ?? "?"} -> ${val}`);
-                }
-                if (baseline) w(`-- ${src.label}: начальных значений ${baseline}`);
+                try { snapshot(src); } catch (e) { src.prev = null; w(`ошибка снимка ${src.label}: ${e}`); }
             }
             flush();
         };
-        // снимок читает тысячи полей через IL2CPP: из фонового потока это конфликтует с главным потоком игры (зависания на старте),
+        // снимок читает память игры: из фонового потока это конфликтует с главным потоком игры (зависания на старте),
         // поэтому выполняем на главном потоке — из Update меню и боя, не чаще раза в интервал из настроек
-        let lastTick = 0;
+        // и не больше доли времени: после долгого снимка пауза пропорционально длиннее
+        let nextTick = 0;
         const onMain = () => {
             const now = Date.now();
-            if (now - lastTick < tickMs()) return;
-            lastTick = now;
+            if (now < nextTick) return;
             try { tick(); } catch (e) { w(`ошибка снимка: ${e}`); }
             const dt = Date.now() - now;
+            nextTick = now + Math.max(tickMs(), dt * TICK_COOLDOWN);
             if (dt > 100) w(`МЕДЛЕННО: снимок занял ${dt} мс (главный поток; отключите тяжёлые группы в «Настройки»)`);
         };
         for (const cn of ["A_MainMenuInformation", "C_Battle_Manager"]) {
@@ -287,30 +448,38 @@ export default defineMod({
         }
 
         // ---- трассировка вызовов ----
-        const counts = new Map<string, number>();
-        const winCalls = new Map<string, number>();
-        let attached = 0;
+        const hooks: Hook[] = [];
+        let callsSig = "";
+        /** Помечает исключённые вызовы заранее, чтобы в обработчике не сравнивать строки на каждый вызов. */
+        const refreshCalls = () => {
+            const sig = exCalls.join(",");
+            if (sig === callsSig) return;
+            callsSig = sig;
+            for (const h of hooks) h.skip = exCalls.some(p => h.name.startsWith(p + "("));
+        };
         for (const c of TRACE_CLASSES) {
             for (const m of ctx.cls(c).methods) {
                 if (SKIP_METHOD.test(m.name) || m.virtualAddress.isNull()) continue;
-                const name = `${c}.${m.name}(${m.parameters.map(p => p.type.name.split(".").pop()).join(",")})`;
-                const l = Interceptor.attach(m.virtualAddress, {
+                const h: Hook = {
+                    name: `${c}.${m.name}(${m.parameters.map(p => p.type.name.split(".").pop()).join(",")})`,
+                    n: 0, lastN: 0, win: 0, skip: exCalls.some(p => `${c}.${m.name}(`.startsWith(p + "(")), listener: null,
+                };
+                h.listener = Interceptor.attach(m.virtualAddress, {
                     onEnter() {
-                        if (!on("g_calls") || exCalls.some(p => name.startsWith(p + "("))) return;
-                        counts.set(name, (counts.get(name) ?? 0) + 1);
-                        const n = (winCalls.get(name) ?? 0) + 1;
-                        winCalls.set(name, n);
-                        if (n === HOT_CALLS_PER_WINDOW) {
-                            l.detach();
-                            w(`HOT ${name} (> ${HOT_CALLS_PER_WINDOW} вызовов за ${WINDOW_MS / 1000}с, трассировку снял)`);
+                        if (!callsOn || h.skip) return;
+                        h.n++;
+                        if (++h.win === HOT_CALLS_PER_FLUSH) {
+                            h.listener!.detach();
+                            w(`HOT ${h.name} (> ${HOT_CALLS_PER_FLUSH} вызовов за ${CALLS_FLUSH_MS / 1000}с, трассировку снял)`);
                         }
                     },
                 });
-                ctx.onCleanup(() => l.detach());
-                attached++;
+                ctx.onCleanup(() => h.listener!.detach());
+                hooks.push(h);
             }
         }
-        w(`трассировка: методов под наблюдением ${attached}`);
+        callsSig = exCalls.join(",");
+        w(`трассировка: методов под наблюдением ${hooks.length}`);
 
 
         // ---- окно характеристик героя (то, что игрок видит на паузе): тексты строк при каждом обновлении ----
@@ -323,12 +492,13 @@ export default defineMod({
             return out;
         };
         let labelsLogged = false;
+        let lastStatus = "";
         const statusMethod = ctx.cls("C_Battle_AllyUnit").tryMethod("Display_BattleStatus", 0);
         if (statusMethod) {
             const l = Interceptor.attach(statusMethod.virtualAddress, {
                 onEnter(args) { (this as any).self = args[0]; },
                 onLeave() {
-                    if (!on("g_status")) return;
+                    if (!statusOn) return;
                     try {
                         const hero = new Il2Cpp.Object((this as any).self);
                         const values = texts(hero.field<Il2Cpp.Array<Il2Cpp.Object>>("Array_BattleStatus_Value").value);
@@ -338,7 +508,10 @@ export default defineMod({
                             w("STATUS названия строк: " + names.map((n, i) => `${i}=${n}`).join(" | "));
                             labelsLogged = true;
                         }
-                        w("STATUS значения: " + values.map((v, i) => `${i}=${v}`).join(" | "));
+                        const line = values.map((v, i) => `${i}=${v}`).join(" | ");
+                        if (line === lastStatus) return;                 // окно обновляется постоянно, а значения не меняются
+                        lastStatus = line;
+                        w("STATUS значения: " + line);
                     } catch (e) { w("ошибка STATUS: " + e); }
                 },
             });
@@ -374,12 +547,12 @@ export default defineMod({
             const l = Interceptor.attach(m.virtualAddress, {
                 onEnter(args) {
                     (this as any).self = args[0];
-                    if (!on("g_art")) return;
+                    if (!artOn) return;
                     const a = m.parameters.map((p, i) => isInt[i] ? `${p.name}=${args[i + 1].toInt32()}` : p.name).join(" ");
                     w(`ART ${sig}(${a})`);
                 },
                 onLeave() {
-                    if (!on("g_art")) return;
+                    if (!artOn) return;
                     if (/^(Create_Artifact|Create_Merchant|Button_Artifact_Change|Button_Artifact_Select)$/.test(m.name)) {
                         try { dumpOffer(new Il2Cpp.Object((this as any).self), m.name); } catch (e) { w("ошибка OFFER: " + e); }
                     }
@@ -389,16 +562,15 @@ export default defineMod({
         }
 
         // редкие вызовы пишем по мере появления, частые — сводкой
-        const lastSummary = new Map<string, number>();
-        ctx.every(2000, () => {
+        ctx.every(CALLS_FLUSH_MS, () => {
             const lines: string[] = [];
-            for (const [name, n] of counts) {
-                const d = n - (lastSummary.get(name) ?? 0);
-                if (d > 0) lines.push(`${name}×${d}`);
-                lastSummary.set(name, n);
+            for (const h of hooks) {
+                const d = h.n - h.lastN;
+                if (d > 0) lines.push(`${h.name}×${d}`);
+                h.lastN = h.n;
+                h.win = 0;
             }
             if (lines.length) w("CALLS " + lines.join("  "));
-            winCalls.clear();
         });
     },
 });

@@ -1,5 +1,5 @@
 import { markSession, mods, notifyMainMenu, restoreSession, sessionDiff, setEnabled, setSetting, type ModState } from "./core";
-import { loadExternalMods, MODS_DIRS } from "./ext";
+import { findCandidates, installCandidate } from "./ext";
 import { log } from "./log";
 import { CORE, LOGICAL_W, UI, UIMODULE, add, button, clearChildren, cls, color, fmt, gold, image, kit, label, node, numberField, place, placeAtScreenCenter, tint, v2 } from "./uikit";
 
@@ -153,16 +153,16 @@ function rebuild(): void {
                 setSetting(st, opt.key, Math.round(next * 1000) / 1000);
                 rebuild();
             };
-            button(content, "−", 330, y + ly, 80, 64, 38, [0.22, 0.22, 0.22, 1], () => step(-1));
+            button(content, "−", 300, y + ly, 80, 64, 38, [0.22, 0.22, 0.22, 1], () => step(-1));
             const decimal = !Number.isInteger(opt.step) || !Number.isInteger(opt.min);
-            numberField(content, fmt(st.settings[opt.key]), 414, y + ly + 2, 112, 60, 32, decimal, text => {
+            numberField(content, fmt(st.settings[opt.key]), 396, y + ly + 2, 112, 60, 32, decimal, text => {
                 const v = parseFloat(text.replace(",", "."));
                 if (!isFinite(v)) { rebuild(); return; }
                 const next = Math.round(Math.min(opt.max, Math.max(opt.min, v)) * 1000) / 1000;
                 if (next !== st.settings[opt.key]) { track(st); setSetting(st, opt.key, next); }
                 rebuild();
             });
-            button(content, "+", 530, y + ly, 80, 64, 38, [0.22, 0.22, 0.22, 1], () => step(1));
+            button(content, "+", 524, y + ly, 80, 64, 38, [0.22, 0.22, 0.22, 1], () => step(1));
             ly += 76;
         }
         if (hasSettings) {
@@ -171,7 +171,7 @@ function rebuild(): void {
         }
         y += h + 14;
     }
-    const hint = label(content, "Добавить мод: архив .zip в Download/ModKit (или files/modkit/mods) и кнопка «+» вверху.", 10, y, W - 20, 60, 21, 0);
+    const hint = label(content, "Добавить мод: скачайте архив .zip с mod.json и нажмите «+» вверху — он найдётся в Download.", 10, y, W - 20, 60, 21, 0);
     tint(hint, color(0.5, 0.5, 0.5, 1));
     content.method("set_sizeDelta").invoke(v2(W * k, (y + 90 + (pending.size ? 220 : 0)) * k));
     showBanner();
@@ -230,7 +230,12 @@ function wrenchTexture(): Il2Cpp.Object {
 const textures = new Map<Uint8Array, Il2Cpp.Object | null>();
 /** PNG/JPG из архива мода -> Texture2D (через ImageConversion.LoadImage). Кэшируется, при ошибке null. */
 function textureOf(bytes: Uint8Array): Il2Cpp.Object | null {
-    if (textures.has(bytes)) return textures.get(bytes)!;
+    if (textures.has(bytes)) {
+        const old = textures.get(bytes)!;
+        // после боя игра выгружает неиспользуемые ресурсы: кэшированная текстура может быть уничтожена (m_CachedPtr == 0) — тогда создаём заново
+        if (!old || !old.handle.add(0x10).readPointer().isNull()) return old;
+        textures.delete(bytes);
+    }
     let tex: Il2Cpp.Object | null = null;
     try {
         const arr = Il2Cpp.array<number>(Il2Cpp.corlib.class("System.Byte"), bytes.length);
@@ -239,6 +244,10 @@ function textureOf(bytes: Uint8Array): Il2Cpp.Object | null {
         tex.method(".ctor", 2).invoke(2, 2);
         const ok = cls("UnityEngine.ImageConversionModule", "UnityEngine.ImageConversion").method<boolean>("LoadImage", 2).invoke(tex, arr);
         if (!ok) tex = null;
+        else {
+            tex.method("set_hideFlags").invoke(61);                        // HideAndDontSave: не выгружается при смене сцены
+            try { tex.ref(true); } catch (_) { /* без закрепления */ }     // и не собирается сборщиком мусора
+        }
     } catch (e) { log("картинка мода: " + e); tex = null; }
     textures.set(bytes, tex);
     return tex;
@@ -258,11 +267,51 @@ function picture(parent: Il2Cpp.Object, bytes: Uint8Array, x: number, y: number,
     raw.method("set_raycastTarget").invoke(false);
 }
 
+/** Окно поиска по «+»: архивы с mod.json из Download/ModKit и Download; нажатие на строку устанавливает мод. */
+function showPicker(message = ""): void {
+    const found = findCandidates().filter(c => !c.installed);
+    const rows = found.slice(0, 8);
+    const rowH = 96;
+    const h = 250 + Math.max(1, rows.length) * (rowH + 16);
+    const dim = node("ModKitPicker", kit.canvasTf);
+    dim.rt.method("set_anchorMin").invoke(v2(0, 0));
+    dim.rt.method("set_anchorMax").invoke(v2(1, 1));
+    dim.rt.method("set_offsetMin").invoke(v2(0, 0));
+    dim.rt.method("set_offsetMax").invoke(v2(0, 0));
+    const dimImg = image(dim.go, 0, 0, 0, 0.8);
+    add(dim.go, UI, "UnityEngine.UI.Button").method("set_targetGraphic").invoke(dimImg);
+    const box = node("box", dim.rt);
+    place(box.rt, 40, Math.max(40, (screenHeight - h) / 2), LOGICAL_W - 80, h);
+    image(box.go, 0.09, 0.09, 0.11, 1);
+    tint(label(box.rt, "Найденные моды", 20, 16, LOGICAL_W - 120, 70, 38, 4), gold());
+    const sub = label(box.rt, message || (found.length
+        ? "Download и Download/ModKit. Нажмите на мод, чтобы установить."
+        : "Архивов с mod.json в Download не найдено. Скопируйте .zip мода в Download/ModKit."), 30, 90, LOGICAL_W - 140, 70, 21, 0);
+    tint(sub, color(0.7, 0.7, 0.7, 1));
+    rows.forEach((c, i) => {
+        const info = [c.version && "v" + c.version, c.author].filter(Boolean).join(" · ");
+        const text = c.name + (info ? "  (" + info + ")" : "");
+        button(box.rt, text, 30, 170 + i * (rowH + 16), LOGICAL_W - 140, rowH, 26, [0.18, 0.28, 0.42, 1], () => {
+            destroy(dim.go);
+            let msg: string;
+            try { msg = `Установлен: ${installCandidate(c)}`; } catch (e) { msg = `Ошибка (${c.file}): ${e}`; }
+            log("«+»: " + msg);
+            status = msg;
+            rebuild();
+            showPicker(msg);
+        });
+    });
+    button(box.rt, "Закрыть", 30, h - 90, LOGICAL_W - 140, 76, 28, [0.38, 0.20, 0.20, 1], () => destroy(dim.go));
+}
+
+let stage = "";
 function buildUi(menu: Il2Cpp.Object): void {
+    stage = "шрифт";
     const dbFont = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("Z_Database").field<Il2Cpp.Object>("Font_Apply_Medium").value;
     font = dbFont.isNull() ? null : dbFont;
 
     const gameCanvas = findGameCanvas();
+    stage = "параметры холста";
     const scale = gameCanvas.method<number>("get_scaleFactor").invoke();
     k = (cls(CORE, "UnityEngine.Screen").method<number>("get_width").invoke() / scale) / LOGICAL_W;
     const screenH = cls(CORE, "UnityEngine.Screen").method<number>("get_height").invoke() / scale / k;
@@ -271,6 +320,7 @@ function buildUi(menu: Il2Cpp.Object): void {
     kit.font = font;
     kit.screenH = screenH;
     kit.canvasTf = gameCanvas.method<Il2Cpp.Object>("get_transform").invoke();
+    stage = "окно";
     const canvasTf = gameCanvas.method<Il2Cpp.Object>("get_transform").invoke();
 
     // окно — растянутый на весь холст дочерний объект (рисуется поверх всего)
@@ -283,23 +333,26 @@ function buildUi(menu: Il2Cpp.Object): void {
     panel = win.go;
     winRt = win.rt;
     image(win.go, 0, 0, 0, 1);                                    // чёрный фон, как у энциклопедии
+    stage = "заголовок и кнопки";
 
     const title = label(win.rt, "Моды", 0, 100, LOGICAL_W, 80, 52, 4);
     tint(title, gold());
     button(win.rt, "X", LOGICAL_W - 100, 70, 80, 80, 54, [0, 0, 0, 0.01], () => panel!.method("SetActive").invoke(false));
 
     // «+»: подключить новые моды из папки
-    button(win.rt, "+", 20, 70, 80, 80, 64, [0, 0, 0, 0.01], () => {
-        const r = loadExternalMods();
-        status = r.added.length
-            ? `Подключено: ${r.added.join(", ")}` + (r.errors.length ? `. Ошибки: ${r.errors.join("; ")}` : "")
-            : r.errors.length ? `Ошибки: ${r.errors.join("; ")}`
-            : `Новых модов нет (найдено файлов: ${r.files}). Положите архив .zip в ${MODS_DIRS[0].replace("/sdcard/", "")} и нажмите «+».`;
-        log("«+»: " + status);
-        rebuild();
+    // в шрифте игры может не быть «+», поэтому крест рисуем двумя белыми полосками поверх зелёной кнопки
+    const addBtn = button(win.rt, "", 20, 70, 80, 80, 64, [0.1, 0.65, 0.25, 1], () => {
+        try { showPicker(); } catch (e) { log("поиск модов: " + e); }
     });
+    void addBtn;
+    for (const [x, y, w, h] of [[34, 106, 52, 8], [56, 84, 8, 52]]) {
+        const bar = node("plus", win.rt);
+        place(bar.rt, x, y, w, h);
+        image(bar.go, 1, 1, 1, 1).method("set_raycastTarget").invoke(false);
+    }
 
     // список с прокруткой пальцем
+    stage = "список";
     const viewTop = 210;
     const view = node("view", win.rt);
     place(view.rt, 30, viewTop, LOGICAL_W - 60, screenH - viewTop - 30);
@@ -318,6 +371,7 @@ function buildUi(menu: Il2Cpp.Object): void {
 
     rebuild();
     panel.method("SetActive").invoke(false);
+    stage = "запись на главной";
 
     // запись «Моды» на главной странице — в том же стиле, что и «Играть»; живёт внутри поля главного меню
     const field = menu.field<Il2Cpp.Object>("Obj_FieldMainMenu").value;
@@ -342,6 +396,7 @@ function buildUi(menu: Il2Cpp.Object): void {
     raw.method("set_texture").invoke(wrenchTexture());
     raw.method("set_raycastTarget").invoke(false);
     notifyMainMenu(menu);
+    stage = "notifyMainMenu и диалог";
     const diff = sessionDiff();
     if (diff && !dialogShown) {
         dialogShown = true;
@@ -366,15 +421,34 @@ export function installMenu(): void {
         const update = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("A_MainMenuInformation").method("Update");
         let lastSelf: NativePointer = NULL;
         let failures = 0;
+        let calls = 0;
+        const entryAlive = (self: NativePointer): boolean => {
+            try {
+                if (!entryGo || entryGo.handle.add(0x10).readPointer().isNull()) return false;      // m_CachedPtr == 0: объект Unity уничтожен
+                const field = new Il2Cpp.Object(self).field<Il2Cpp.Object>("Obj_FieldMainMenu").value;
+                const parent = entryGo.method<Il2Cpp.Object>("get_transform").invoke().method<Il2Cpp.Object>("get_parent").invoke();
+                return parent.handle.equals(field.method<Il2Cpp.Object>("get_transform").invoke().handle);
+            } catch (_) { return false; }
+        };
         Interceptor.attach(update.virtualAddress, {
             onEnter(args) {
-                if (args[0].equals(lastSelf) || failures >= 3) return;
+                if (failures >= 3) return;
+                // Адрес объекта меню после боя может совпасть со старым (память переиспользуется), а сцена главного меню
+                // пересоздаётся — тогда запись «Моды» уничтожена вместе со старой сценой. Поэтому раз в ~30 кадров проверяем,
+                // что кнопка жива и висит в нынешнем меню.
+                const same = args[0].equals(lastSelf);
+                if (same) {
+                    if (++calls % 30 !== 0 || entryAlive(args[0])) return;
+                    log("меню MODS: кнопка пропала (возврат из боя) — строю заново");
+                }
                 lastSelf = args[0];
                 try {
+                    destroy(rootGo);
+                    destroy(entryGo);
                     buildUi(new Il2Cpp.Object(args[0]));
                 } catch (e) {
                     failures++;
-                    log("меню: " + e);
+                    log(`меню: ${e} (этап: ${stage})`);
                     for (const g of [rootGo, entryGo]) if (g) { try { cls(CORE, "UnityEngine.Object").method("Destroy", 1).invoke(g); } catch (_) { /* ignore */ } }
                 }
             },

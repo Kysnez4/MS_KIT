@@ -13,7 +13,7 @@ assert len(OLD) == len(NEW)
 BASE = os.path.join(P.SRC, "com.vkslrzm.Zombie-612.apk")
 SPLIT = os.path.join(P.SRC, "config.arm64_v8a-612.apk")
 LOADER = os.path.join(P.OUT, "loader.standalone.js")
-MODS = ["auto_artifact", "curses"]   # встроенные моды клона; остальное — внешние из Download/ModKit
+MODS = []   # клон без встроенных модов; все моды — внешние zip из Download/ModKit
 OUT_APK = os.path.join(P.OUT, "Zombix.apk")
 RAW = os.path.join(P.OUT, "raw_Zombix.apk")
 # relative path: the gadget resolves it next to itself (extracted native lib dir)

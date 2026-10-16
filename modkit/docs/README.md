@@ -84,7 +84,7 @@ export default defineMod({
 Дамп можно обновить: `npx frida-compile modkit/src/dump.ts -o modkit/out/dump.js -B iife -S`, затем
 `.\modkit\push.ps1 modkit\out\dump.js` и забрать `dump.cs` из папки `modkit/` на телефоне.
 
-Готовые примеры: `move_speed.ts` (таймер + настройки + откат). Примеры кода с `replace`/`after`/`before` см. в `api.ts`
+Готовые примеры: `rune_defence.ts` (хуки + настройки + откат). Примеры кода с `replace`/`after`/`before` см. в `api.ts`
 (мод «бессмертие» был одной строкой: `ctx.replace("C_Battle_AllyUnit", "Unit_Damage", 3, function () {})`).
 
 ## Моды в формате .zip (без пересборки)
@@ -119,7 +119,8 @@ my_mod.zip
 
 Обязательны только `id` (латиница, цифры, `_ . -`) и `name`. Остальное по умолчанию: `main` = `main.js`, `icon` = `icon.png`.
 Значения из `mod.json` главнее тех, что заданы в скрипте. Скрипт — тот же `ModKit.define(...)` и тот же `ctx`, что у TypeScript-модов
-(пример — `modkit/examples/wrath_x8/`). Картинки — PNG или JPG.
+(пример — `modkit/examples/wrath_x8/`). Кроме `ModKit.define` скрипту доступны `ModKit.ui` (инструменты `uikit.ts`: кнопки, поля, окна
+`openChecklist` / `openNumberForm`) и `ModKit.data` (таблицы игры из `data.ts`, например `new ModKit.data.Table("Synergy")`). Картинки — PNG или JPG.
 
 ```powershell
 npm run pack-mod -- modkit\examples\wrath_x8        # папка -> wrath_x8.zip (рядом с папкой)
@@ -127,10 +128,10 @@ npm run add-mod -- modkit\examples\wrath_x8         # упаковать и за
 npm run add-mod -- мой_мод.zip                      # залить готовый архив
 ```
 
-Вручную: положите `.zip` в **`Download/ModKit/`** (любым файловым менеджером или по USB; игре выдан «доступ ко всем файлам» —
-`install.ps1` делает это командой `appops`) либо в `Android/data/com.vkslrzm.Zombie/files/modkit/mods/`. Откройте окно «Моды»
-и нажмите **«+»** вверху слева; моды из этих папок также подключаются при каждом старте игры. Ошибка в архиве (нет `mod.json`,
-нет скрипта, битый zip) показывается вверху списка.
+Вручную: скачайте или положите `.zip` в **`Download/`** или **`Download/ModKit/`** (игре выдан «доступ ко всем файлам» —
+`install.ps1` делает это командой `appops`). Откройте окно «Моды» и нажмите **«+»** вверху слева: появится список найденных
+архивов с `mod.json`; нажатие на строку устанавливает мод (архив копируется в `Android/data/com.vkslrzm.Zombie/files/modkit/mods/`,
+оттуда он подключается при каждом старте). Поиск запускается только по «+». Ошибка установки показывается в окне поиска и вверху списка.
 
 Архив можно собрать любой программой (7-Zip, проводник): поддерживаются и «без сжатия», и обычный deflate (распаковывает системный
 `libz.so`). Файлы должны лежать в корне архива, а не в подпапке. Ограничения: системного окна «выбор файла» нет (нужен Java-вызов, он
@@ -164,7 +165,7 @@ ctx.data.whenReady(() => {            // таблицы появляются ч�
 });
 ```
 
-Примеры: `data_edit_artifact.ts`, `data_new_artifact.ts`, `data_wrath_of_heaven.ts` (комбинация «Гнев небес»: число молний ×3 → ×N; текст в энциклопедии меняется, реальное число молний в бою я не проверял). Чтобы увидеть таблицы целиком:
+Пример: `data_wrath_of_heaven.ts` (комбинация «Гнев небес»: число молний ×3 → ×N; текст в энциклопедии меняется, реальное число молний в бою я не проверял). Чтобы увидеть таблицы целиком:
 `npm run dump-tables`, залить `modkit\out\dump_tables.js` через `push.ps1`, забрать `tables/*.json` с телефона
 (`BattleUnitEnemy` заполняется только в бою — выгружайте во время боя). Потом `python modkit\tools_gen_docs.py`
 обновит TABLES.md и EFFECTS.md.

@@ -1,7 +1,7 @@
 # MS_KIT — ModKit для Magic Survival
 
 Менеджер модов для Magic Survival: моды на TypeScript встраиваются в игру через `frida-gadget`, в игре появляется окно «Моды».
-Готовый автономный клон **Zombix** (моды «Артефакт на старте боя» и «Проклятия») — в [Releases](https://github.com/Kysnez4/MS_KIT/releases).
+Готовый автономный клон **Zombix** (без встроенных модов, моды ставятся zip-архивами) — в [Releases](https://github.com/Kysnez4/MS_KIT/releases). Готовые zip-моды: [gamelog](modkit/examples/gamelog.zip), [артефакты на старте](modkit/examples/auto_artifact.zip).
 
 ## Установка Zombix
 
