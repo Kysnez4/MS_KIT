@@ -3,6 +3,7 @@ import { installArtifactHooks } from "./artifacts";
 import { register, start } from "./core";
 import { loadExternalMods } from "./ext";
 import { log } from "./log";
+import { requestAllFilesAccess } from "./storage";
 import { installMenu } from "./ui";
 import allMods from "./mods.gen";
 
@@ -17,4 +18,5 @@ Il2Cpp.perform(() => {
     start();
 });
 
+try { requestAllFilesAccess(); } catch (e: any) { log("storage: " + e + " " + e.stack); }
 installMenu();
