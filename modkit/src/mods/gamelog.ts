@@ -1,8 +1,9 @@
 import { defineMod } from "../api";
-import { DIR, chmod644 } from "../log";
+import { DIR, chmod644, log, mkdirs } from "../log";
 import { openChecklist } from "../uikit";
 
-const OUT = DIR + "/gamelog.txt";
+const OUT_NAME = "gamelog.txt";
+const DOWNLOAD_DIR = "/sdcard/Download/ModKit";
 const OBSCURED = new Set(["ObscuredInt", "ObscuredFloat", "ObscuredDouble", "ObscuredBool", "ObscuredLong", "ObscuredShort", "ObscuredByte", "ObscuredUInt"]);
 const SKIP_FIELD = /^(LSoundList_|Array_Float_AutoSave|Array_Int_AutoSave)/;
 /** Классы, по полям которых строятся снимки состояния. */
@@ -171,6 +172,7 @@ export default defineMod({
     description: "Пишет в gamelog.txt все изменения значений и вызовы методов.",
     options: [
         { key: "interval", label: "Интервал снимка, с", default: 0.7, min: 0.5, max: 5, step: 0.5 },
+        { key: "toDownload", label: "Папка журнала", default: 0, min: 0, max: 1, step: 1, hidden: true },
         ...GROUPS.map(g => ({ key: g.key, label: g.label, default: 1, min: 0, max: 1, step: 1, hidden: true })),
         ...EXCLUDES.map(e => ({ key: e.key, label: e.label, default: 1, min: 0, max: 1, step: 1, hidden: true })),
     ],
@@ -178,24 +180,41 @@ export default defineMod({
         openChecklist({
             name: "ModKitGamelogSettings",
             title: "Журнал игры",
-            subtitle: "Отметьте, что писать в gamelog.txt. Меняется сразу, без перезапуска.",
+            subtitle: "Отметьте, что и куда писать в gamelog.txt. Меняется сразу, без перезапуска.",
             sections: [
+                { header: "Куда писать", items: [{ key: "toDownload", label: "В Download/ModKit (иначе Android/data/…/modkit)" }] },
                 { header: "Писать", items: GROUPS.map(g => ({ key: g.key, label: g.label })) },
                 { header: "Не писать (шумные источники)", items: EXCLUDES.map(e => ({ key: e.key, label: e.label })) },
             ],
-            get: key => ctx.settings[key] !== 0,
+            get: key => key === "toDownload" ? ctx.settings[key] === 1 : ctx.settings[key] !== 0,
             set: (key, v) => ctx.setSetting(key, v ? 1 : 0),
         });
     },
     onEnable(ctx) {
-        const file = new File(OUT, "a");
-        chmod644(OUT);
+        // файл открывается заново, если в настройках сменили папку
+        let file: File | null = null;
+        let outPath = "";
+        const target = () => (ctx.settings.toDownload === 1 ? DOWNLOAD_DIR : DIR) + "/" + OUT_NAME;
+        const reopen = () => {
+            const path = target();
+            if (path === outPath && file) return;
+            try { file?.close(); } catch (_) { /* */ }
+            file = null;
+            outPath = path;
+            try {
+                mkdirs(path.substring(0, path.lastIndexOf("/")));
+                file = new File(path, "a");
+                chmod644(path);
+            } catch (e) { log("gamelog: не удалось открыть " + path + ": " + e); }
+        };
+        reopen();
         const t0 = Date.now();
         const w = (s: string) => {
-            try { file.write(`[${((Date.now() - t0) / 1000).toFixed(1)}] ${s}\n`); } catch (_) { /* нет файла */ }
+            reopen();
+            try { file!.write(`[${((Date.now() - t0) / 1000).toFixed(1)}] ${s}\n`); } catch (_) { /* нет файла */ }
         };
-        const flush = () => { try { file.flush(); } catch (_) { /* */ } };
-        ctx.onCleanup(() => { try { file.close(); } catch (_) { /* */ } });
+        const flush = () => { try { file?.flush(); } catch (_) { /* */ } };
+        ctx.onCleanup(() => { try { file?.close(); } catch (_) { /* */ } });
         w("===== сессия начата =====");
 
         // ---- настройки (читаются на лету, меняются на экране «Настройки») ----
