@@ -1,0 +1,10 @@
+{
+  "id": "test_conflict_b",
+  "name": "Тест: конфликт B",
+  "description": "Заменяет тот же метод — вторым включённым не запустится.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false
+}

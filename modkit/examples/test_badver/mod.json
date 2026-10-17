@@ -1,0 +1,11 @@
+{
+  "id": "test_badver",
+  "name": "Тест: нужна версия 2",
+  "description": "Требует библиотеку >=2.0 — должен ждать с причиной.",
+  "version": "1.0",
+  "depends": { "test_lib": ">=2.0" },
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false
+}

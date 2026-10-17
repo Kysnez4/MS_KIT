@@ -1,0 +1,11 @@
+{
+  "id": "test_addon",
+  "name": "Тест: аддон",
+  "description": "Зависит от «Тест: библиотека» >=1.0. Пишет в лог события боя.",
+  "version": "1.0",
+  "depends": { "test_lib": ">=1.0" },
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false
+}

@@ -1,9 +1,11 @@
 import JavaBridge from "frida-java-bridge";
-import { log } from "./log";
+import { DIR, log, readText, writeText } from "./log";
 
 // frida-compile отдаёт модуль то с default, то без
 const Java: typeof JavaBridge = (JavaBridge as any).perform ? JavaBridge : (JavaBridge as any).default;
 const say = (m: string) => log("storage: " + m);
+// Java-мост на старте игры иногда роняет ART (SIGBUS в Jit::MaybeDoOnStackReplacement). Когда доступ уже подтверждён, Java не трогаем.
+const MARKER = DIR + "/.files_access";
 
 // мост рассчитан на Frida 17, встроенный gadget старше: недостающие функции Module
 const M = Module as any;
@@ -17,13 +19,16 @@ M.findGlobalExportByName ??= (name: string) => M.findExportByName(null, name);
  * После выдачи доступа моды подхватятся со следующего запуска.
  */
 export function requestAllFilesAccess(tries = 0): void {
-    if (!tries) say("проверка, Java " + Java.available);
+    if (!tries) {
+        if (readText(MARKER)) { say("доступ подтверждён раньше, Java не используется"); return; }
+        say("проверка, Java " + Java.available);
+    }
     if (!Java.available) return;
     const retry = () => { if (tries < 120) setTimeout(() => requestAllFilesAccess(tries + 1), 500); else say("Activity так и не появилась"); };
     Java.perform(() => {
         try {
             if (Java.use("android.os.Build$VERSION").SDK_INT.value < 30) return;
-            if (Java.use("android.os.Environment").isExternalStorageManager()) { if (!tries) say("доступ уже есть"); return; }
+            if (Java.use("android.os.Environment").isExternalStorageManager()) { if (!tries) say("доступ уже есть"); try { writeText(MARKER, "1"); } catch (_) { /* не критично */ } return; }
             const act = Java.use("com.unity3d.player.UnityPlayer").currentActivity.value;
             if (act === null) { retry(); return; }
             Java.scheduleOnMainThread(() => {

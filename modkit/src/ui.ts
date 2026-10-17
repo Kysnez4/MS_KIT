@@ -1,5 +1,5 @@
-import { markSession, mods, notifyMainMenu, restoreSession, sessionDiff, setEnabled, setSetting, type ModState } from "./core";
-import { findCandidates, installCandidate } from "./ext";
+import { compareVersions, dependentNames, markSession, modVersion, mods, removeMod, notifyMainMenu, restoreSession, sessionDiff, setEnabled, setSetting, type ModState } from "./core";
+import { findCandidates, installCandidate, type Candidate } from "./ext";
 import { log } from "./log";
 import { CORE, LOGICAL_W, UI, UIMODULE, add, button, clearChildren, cls, color, fmt, gold, image, kit, label, node, numberField, place, placeAtScreenCenter, tint, v2 } from "./uikit";
 
@@ -93,10 +93,62 @@ function showBanner(): void {
 }
 
 
+/** Кнопки карточек (указатель объекта -> мод) для долгого нажатия. */
+const cardButtons = new Map<string, ModState>();
+const HOLD_MS = 600;
+let press: { st: ModState; t0: number; y0: number } | null = null;
+
+const scrollY = (): number => {
+    try { return content!.method<Il2Cpp.ValueType>("get_anchoredPosition").invoke().field<number>("y").value; } catch (_) { return 0; }
+};
+
+/** Окно подтверждения удаления zip-мода (вызывается долгим нажатием на карточку). */
+function askRemove(st: ModState): void {
+    if (!st.def.meta) {
+        showDialog("Встроенный мод", `«${st.def.name}» встроен в загрузчик, удалить его нельзя — только выключить.`, [["Закрыть", () => {}]], -120);
+        return;
+    }
+    const deps = dependentNames(st);
+    const warn = deps.length ? `\n\nОт него зависят: ${deps.join(", ")}. Они будут выключены.` : "";
+    showDialog("Удалить мод?", `«${st.def.name}»\n\nМод будет выключен, а его файл удалён с телефона.${warn}`, [
+        ["Удалить", () => {
+            try { pending.delete(st); removeMod(st); } catch (e) { log("ошибка удаления: " + e); }
+            rebuild();
+        }],
+        ["Отмена", () => {}],
+    ], deps.length ? 60 : 0);
+}
+
+/** Долгое нажатие на карточку: хуки Selectable.OnPointerDown/Up + проверка времени в Update главного меню. */
+function installLongPress(): void {
+    const sel = Il2Cpp.domain.assembly("UnityEngine.UI").image.class("UnityEngine.UI.Selectable");
+    Interceptor.attach(sel.method("OnPointerDown", 1).virtualAddress, {
+        onEnter(args) {
+            const st = cardButtons.get(args[0].toString());
+            press = st ? { st, t0: Date.now(), y0: scrollY() } : null;
+            if (st) log(`нажатие на карточку «${st.def.id}»`);
+        },
+    });
+    Interceptor.attach(sel.method("OnPointerUp", 1).virtualAddress, { onEnter() { press = null; } });
+    const update = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("A_MainMenuInformation").method("Update");
+    Interceptor.attach(update.virtualAddress, {
+        onEnter() {
+            if (!press || Date.now() - press.t0 < HOLD_MS) return;
+            const p = press;
+            press = null;
+            if (Math.abs(scrollY() - p.y0) > 8) return;          // палец тащит список, это прокрутка
+            log(`удержание карточки «${p.st.def.id}»: окно удаления`);
+            try { askRemove(p.st); } catch (e) { log("ошибка окна удаления: " + e); }
+        },
+    });
+    log("долгое нажатие на карточку: хуки установлены");
+}
+
 /** Пересобирает карточки модов (после любого изменения). Позиция прокрутки сохраняется. */
 function rebuild(): void {
     if (!content) return;
     clearChildren(content);
+    cardButtons.clear();
     const W = LOGICAL_W - 60;
     let y = 0;
     if (status) {
@@ -106,9 +158,12 @@ function rebuild(): void {
     }
     for (const st of mods) {
         const opts = (st.def.options ?? []).filter(o => !o.hidden);
-        const hasSettings = !!(st.def.openSettings && st.enabled && st.ctx);
+        const hasSettings = !!(st.def.openSettings && st.active && st.ctx);
+        const blocked = st.enabled && !st.active;
+        const notes = [...(blocked ? [st.problem ?? st.fault ?? "не запущен"] : []), ...st.warnings.map(w => "⚠ " + w)];
+        const needs = Object.entries(st.def.depends ?? {}).map(([id, r]) => id + (r === "*" ? "" : " " + r)).join(", ");
         const shots = (st.def.meta?.screenshots ?? []).slice(0, 3);
-        const h = 78 + (st.def.description ? 62 : 0) + (shots.length ? 170 : 0) + (st.def.meta?.version || st.def.meta?.author ? 40 : 0) + opts.length * 76 + (hasSettings ? 80 : 0) + 16;
+        const h = 78 + (st.def.description ? 62 : 0) + (shots.length ? 170 : 0) + (modVersion(st) || st.def.meta?.author ? 40 : 0) + (needs ? 40 : 0) + notes.length * 40 + opts.length * 76 + (hasSettings ? 80 : 0) + 16;
         // карточка: нажатие переключает мод
         const card = node("card", content);
         place(card.rt, 0, y, W, h);
@@ -116,6 +171,7 @@ function rebuild(): void {
         const cardImg = image(card.go, bg[0], bg[1], bg[2], bg[3]);
         const cardBtn = add(card.go, UI, "UnityEngine.UI.Button");
         cardBtn.method("set_targetGraphic").invoke(cardImg);
+        cardButtons.set(cardBtn.handle.toString(), st);
         const act = Il2Cpp.delegate(cls(CORE, "UnityEngine.Events.UnityAction"), () => {
             try { track(st); setEnabled(st, !st.enabled); rebuild(); } catch (e) { log("ошибка переключения: " + e); }
         });
@@ -125,18 +181,28 @@ function rebuild(): void {
         if (icon) picture(card.rt, icon, 14, 8, 62, 62);
         const name = label(card.rt, st.def.name, icon ? 88 : 20, 8, W - (icon ? 258 : 190), 62, 32);
         tint(name, st.enabled ? color(1, 1, 1, 1) : color(0.85, 0.85, 0.85, 1));
-        const state = label(card.rt, st.enabled ? "ВКЛ" : "ВЫКЛ", W - 160, 8, 140, 62, 30, 5);   // 5 = MiddleRight
-        tint(state, st.enabled ? color(0.45, 1, 0.45, 1) : color(0.55, 0.55, 0.55, 1));
+        const state = label(card.rt, blocked ? "ЖДЁТ" : st.enabled ? "ВКЛ" : "ВЫКЛ", W - 160, 8, 140, 62, 30, 5);   // 5 = MiddleRight
+        tint(state, blocked ? color(1, 0.55, 0.35, 1) : st.enabled ? color(0.45, 1, 0.45, 1) : color(0.55, 0.55, 0.55, 1));
         let ly = 74;
         if (st.def.description) {
             const d = label(card.rt, st.def.description, 20, ly - 4, W - 40, 58, 23, 0);   // 0 = UpperLeft
             tint(d, color(0.7, 0.7, 0.7, 1));
             ly += 62;
         }
-        const info = [st.def.meta?.version && "v" + st.def.meta.version, st.def.meta?.author].filter(Boolean).join(" · ");
+        const info = [modVersion(st) && "v" + modVersion(st), st.def.meta?.author].filter(Boolean).join(" · ");
         if (info) {
             const t = label(card.rt, info, 20, ly - 4, W - 40, 36, 21, 0);
             tint(t, color(0.5, 0.5, 0.5, 1));
+            ly += 40;
+        }
+        if (needs) {
+            const t = label(card.rt, "Требует: " + needs, 20, ly - 4, W - 40, 36, 21, 0);
+            tint(t, color(0.5, 0.5, 0.5, 1));
+            ly += 40;
+        }
+        for (const n of notes) {
+            const t = label(card.rt, n, 20, ly - 4, W - 40, 36, 21, 0);
+            tint(t, color(1, 0.7, 0.35, 1));
             ly += 40;
         }
         if (shots.length) {
@@ -171,7 +237,7 @@ function rebuild(): void {
         }
         y += h + 14;
     }
-    const hint = label(content, "Добавить мод: скачайте архив .zip с mod.json и нажмите «+» вверху — он найдётся в Download.", 10, y, W - 20, 60, 21, 0);
+    const hint = label(content, "Добавить мод: скачайте архив .zip с mod.json и нажмите «+» вверху — он найдётся в Download. Удалить мод: удерживайте его карточку.", 10, y, W - 20, 60, 21, 0);
     tint(hint, color(0.5, 0.5, 0.5, 1));
     content.method("set_sizeDelta").invoke(v2(W * k, (y + 90 + (pending.size ? 220 : 0)) * k));
     showBanner();
@@ -267,12 +333,30 @@ function picture(parent: Il2Cpp.Object, bytes: Uint8Array, x: number, y: number,
     raw.method("set_raycastTarget").invoke(false);
 }
 
-/** Окно поиска по «+»: архивы с mod.json из Download/ModKit и Download; нажатие на строку устанавливает мод. */
-function showPicker(message = ""): void {
-    const found = findCandidates().filter(c => !c.installed);
-    const rows = found.slice(0, 8);
-    const rowH = 96;
-    const h = 250 + Math.max(1, rows.length) * (rowH + 16);
+interface PickGroup { id: string; name: string; installedVersion?: string; items: Candidate[] }
+
+/** Группирует найденные архивы по id мода: одна запись на мод, версии от новой к старой, одинаковые версии не дублируются. */
+function groupCandidates(found: Candidate[]): PickGroup[] {
+    const map = new Map<string, PickGroup>();
+    for (const c of found) {
+        const g = map.get(c.id) ?? { id: c.id, name: c.name, installedVersion: c.installedVersion, items: [] };
+        if (!g.items.some(x => (x.version ?? "") === (c.version ?? ""))) g.items.push(c);
+        map.set(c.id, g);
+    }
+    const groups = [...map.values()];
+    for (const g of groups) g.items.sort((x, y) => compareVersions(y.version ?? "0", x.version ?? "0"));
+    // сначала моды, у которых есть что поставить новее, потом новые, потом остальные
+    const rank = (g: PickGroup) => g.items.some(i => i.relation === "update") ? 0 : g.items.some(i => i.relation === "new") ? 1 : 2;
+    return groups.filter(g => g.items.some(i => i.relation !== "same") || g.items.length > 1).sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name));
+}
+
+/** Окно поиска по «+»: моды из Download/ModKit и Download. У мода с несколькими версиями — стрелка и список версий; список прокручивается. */
+function showPicker(message = "", expandedIds: string[] = []): void {
+    const t0 = Date.now();
+    const cands = findCandidates();
+    const t1 = Date.now();
+    const groups = groupCandidates(cands);
+    const expanded = new Set<string>(expandedIds);
     const dim = node("ModKitPicker", kit.canvasTf);
     dim.rt.method("set_anchorMin").invoke(v2(0, 0));
     dim.rt.method("set_anchorMax").invoke(v2(1, 1));
@@ -280,27 +364,81 @@ function showPicker(message = ""): void {
     dim.rt.method("set_offsetMax").invoke(v2(0, 0));
     const dimImg = image(dim.go, 0, 0, 0, 0.8);
     add(dim.go, UI, "UnityEngine.UI.Button").method("set_targetGraphic").invoke(dimImg);
+    const h = screenHeight - 120;
     const box = node("box", dim.rt);
-    place(box.rt, 40, Math.max(40, (screenHeight - h) / 2), LOGICAL_W - 80, h);
+    place(box.rt, 40, 60, LOGICAL_W - 80, h);
     image(box.go, 0.09, 0.09, 0.11, 1);
     tint(label(box.rt, "Найденные моды", 20, 16, LOGICAL_W - 120, 70, 38, 4), gold());
-    const sub = label(box.rt, message || (found.length
-        ? "Download и Download/ModKit. Нажмите на мод, чтобы установить."
-        : "Архивов с mod.json в Download не найдено. Скопируйте .zip мода в Download/ModKit."), 30, 90, LOGICAL_W - 140, 70, 21, 0);
+    const sub = label(box.rt, message || (groups.length
+        ? "Download и Download/ModKit. Стрелка ▸ раскрывает список версий. Список можно листать."
+        : "Новых архивов с mod.json в Download не найдено. Скопируйте .zip мода в Download/ModKit."), 30, 90, LOGICAL_W - 140, 70, 21, 0);
     tint(sub, color(0.7, 0.7, 0.7, 1));
-    rows.forEach((c, i) => {
-        const info = [c.version && "v" + c.version, c.author].filter(Boolean).join(" · ");
-        const text = c.name + (info ? "  (" + info + ")" : "");
-        button(box.rt, text, 30, 170 + i * (rowH + 16), LOGICAL_W - 140, rowH, 26, [0.18, 0.28, 0.42, 1], () => {
-            destroy(dim.go);
-            let msg: string;
-            try { msg = `Установлен: ${installCandidate(c)}`; } catch (e) { msg = `Ошибка (${c.file}): ${e}`; }
-            log("«+»: " + msg);
-            status = msg;
-            rebuild();
-            showPicker(msg);
-        });
-    });
+
+    // область с прокруткой
+    const viewTop = 170, viewH = h - viewTop - 100, W = LOGICAL_W - 140;
+    const view = node("view", box.rt);
+    place(view.rt, 30, viewTop, W, viewH);
+    image(view.go, 0, 0, 0, 0.01);
+    add(view.go, UI, "UnityEngine.UI.RectMask2D");
+    const c = node("content", view.rt);
+    const list = c.rt;
+    place(list, 0, 0, W, 100);
+    const sr = add(view.go, UI, "UnityEngine.UI.ScrollRect");
+    sr.method("set_content").invoke(list);
+    sr.method("set_viewport").invoke(view.rt);
+    sr.method("set_horizontal").invoke(false);
+    sr.method("set_vertical").invoke(true);
+    sr.method("set_movementType").invoke(2);
+    sr.method("set_scrollSensitivity").invoke(30);
+
+    const install = (cand: Candidate): void => {
+        const open = [...expanded];
+        destroy(dim.go);
+        let msg: string;
+        try { msg = installCandidate(cand); } catch (e) { msg = `Ошибка (${cand.file}): ${e}`; }
+        log("«+»: " + msg);
+        status = msg;
+        rebuild();
+        showPicker(msg, open);
+    };
+    const verb = (i: Candidate): string => i.relation === "update" ? "обновить" : i.relation === "downgrade" ? "откатить" : i.relation === "same" ? "установлена" : "установить";
+    const render = (): void => {
+        clearChildren(list);
+        const rowH = 92, gap = 14;
+        let y = 0;
+        for (const g of groups) {
+            const cur = g.installedVersion ? `установлена v${g.installedVersion}` : "не установлен";
+            if (g.items.length === 1) {
+                const i = g.items[0];
+                const text = i.relation === "new" ? `Установить: ${g.name}  (v${i.version ?? "?"})`
+                    : `${i.relation === "update" ? "Обновить" : "Откатить"}: ${g.name}  (v${g.installedVersion ?? "?"} → v${i.version ?? "?"})`;
+                button(list, text, 0, y, W, rowH, 25, i.relation === "downgrade" ? [0.40, 0.30, 0.16, 1] : [0.18, 0.28, 0.42, 1], () => install(i));
+                y += rowH + gap;
+                continue;
+            }
+            const open = expanded.has(g.id);
+            button(list, `${open ? "▾" : "▸"} ${g.name}  (${cur}, версий: ${g.items.length})`, 0, y, W, rowH, 25, [0.14, 0.22, 0.34, 1], () => {
+                const t = Date.now();
+                if (expanded.has(g.id)) expanded.delete(g.id); else expanded.add(g.id);
+                render();
+                log(`«+»: раскрытие списка ${Date.now() - t} мс`);
+            });
+            y += rowH + gap;
+            if (!open) continue;
+            for (const i of g.items) {
+                const rel = i.relation;
+                const text = `v${i.version ?? "?"}  —  ${verb(i)}`;
+                const color3: [number, number, number, number] = rel === "same" ? [0.20, 0.20, 0.20, 1] : rel === "downgrade" ? [0.40, 0.30, 0.16, 1] : [0.18, 0.38, 0.30, 1];
+                button(list, text, 60, y, W - 60, rowH - 8, 24, color3, () => { if (rel !== "same") install(i); });
+                y += rowH - 8 + gap;
+            }
+        }
+        if (!groups.length) y = 0;
+        list.method("set_sizeDelta").invoke(v2(W * kit.k, Math.max(y, viewH) * kit.k));
+    };
+    const t2 = Date.now();
+    render();
+    log(`«+»: поиск ${t1 - t0} мс, окно ${t2 - t1} мс, список ${Date.now() - t2} мс (архивов ${cands.length})`);
     button(box.rt, "Закрыть", 30, h - 90, LOGICAL_W - 140, 76, 28, [0.38, 0.20, 0.20, 1], () => destroy(dim.go));
 }
 
@@ -418,6 +556,7 @@ function buildUi(menu: Il2Cpp.Object): void {
  */
 export function installMenu(): void {
     Il2Cpp.perform(() => {
+        try { installLongPress(); } catch (e) { log("долгое нажатие: " + e); }
         const update = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("A_MainMenuInformation").method("Update");
         let lastSelf: NativePointer = NULL;
         let failures = 0;

@@ -1,9 +1,9 @@
 import type { ModDef } from "./api";
-import { addExternal, mods } from "./core";
+import { addExternal, compareVersions, modVersion, mods, replaceMod } from "./core";
 import { APP_DIR, DIR, PKG, chmod, log, mkdirs, readText, writeText } from "./log";
 import * as ui from "./uikit";
 import * as data from "./data";
-import { ZipReader } from "./zip";
+import { ZipReader, fileSize, readZipEntry, utf8 } from "./zip";
 
 /**
  * Внешние моды: архивы .zip. При старте грузятся установленные (files/modkit/mods); новые ищет кнопка «+»
@@ -19,10 +19,15 @@ function libc(name: string): NativePointer {
     return Process.getModuleByName("libc.so").getExportByName(name);
 }
 
+let dirFns: { opendir: NativeFunction<NativePointer, [NativePointer]>; readdir: NativeFunction<NativePointer, [NativePointer]>; closedir: NativeFunction<number, [NativePointer]> } | null = null;
+
 function listZips(dirPath: string): string[] {
-    const opendir = new NativeFunction(libc("opendir"), "pointer", ["pointer"]);
-    const readdir = new NativeFunction(libc("readdir"), "pointer", ["pointer"]);
-    const closedir = new NativeFunction(libc("closedir"), "int", ["pointer"]);
+    dirFns ??= {
+        opendir: new NativeFunction(libc("opendir"), "pointer", ["pointer"]),
+        readdir: new NativeFunction(libc("readdir"), "pointer", ["pointer"]),
+        closedir: new NativeFunction(libc("closedir"), "int", ["pointer"]),
+    };
+    const { opendir, readdir, closedir } = dirFns;
     const dir = opendir(Memory.allocUtf8String(dirPath));
     if (dir.isNull()) return [];
     const names: string[] = [];
@@ -68,8 +73,22 @@ export function loadExternalMods(): LoadResult {
     return res;
 }
 
-export interface Candidate { path: string; file: string; id: string; name: string; version?: string; author?: string; installed: boolean }
-const MAX_SCAN_BYTES = 40 * 1024 * 1024;
+const relationOf = (candidate: string | undefined, installed: string | undefined): "update" | "downgrade" | "same" => {
+    const c = compareVersions(candidate ?? "0", installed ?? "0");
+    return c > 0 ? "update" : c < 0 ? "downgrade" : "same";
+};
+
+export interface Candidate {
+    path: string; file: string; id: string; name: string; version?: string; author?: string;
+    installed: boolean;
+    /** Установленная версия (если мод уже стоит). */
+    installedVersion?: string;
+    /** Отношение версии архива к установленной: new — мод не установлен, update — архив новее, downgrade — старее, same — та же. */
+    relation: "new" | "update" | "downgrade" | "same";
+}
+const MAX_SCAN_BYTES = 8 * 1024 * 1024;       // запасное полное чтение — только для небольших архивов
+/** Архивы без mod.json (путь -> размер при проверке): повторно не открываем, пока размер не изменился. */
+const notMods = new Map<string, number>();
 
 /** Ищет в папках загрузок .zip с mod.json (содержимое скрипта не выполняется). */
 export function findCandidates(): Candidate[] {
@@ -80,40 +99,72 @@ export function findCandidates(): Candidate[] {
             const path = dirPath + "/" + file;
             if (seen.has(path)) continue;
             seen.add(path);
+            const tFile = Date.now();
+            const size = fileSize(path);
+            if (notMods.get(path) === size) continue;
             try {
-                const bytes = File.readAllBytes(path);
-                if (bytes.byteLength > MAX_SCAN_BYTES) continue;
-                const zip = new ZipReader(new Uint8Array(bytes));
-                if (!zip.has("mod.json")) continue;
-                const meta = JSON.parse(zip.text("mod.json"));
+                // читаем только mod.json (open/pread), архив целиком не грузим; запасной путь — полное чтение
+                let metaText: string;
+                try {
+                    metaText = utf8(readZipEntry(path, "mod.json")).replace(/^﻿/, "");
+                } catch (e) {
+                    if (String(e).includes("в архиве нет") || size > MAX_SCAN_BYTES) { notMods.set(path, size); continue; }   // обычный zip без mod.json
+                    const bytes = File.readAllBytes(path);
+                    const zip = new ZipReader(new Uint8Array(bytes));
+                    if (!zip.has("mod.json")) { notMods.set(path, size); continue; }
+                    metaText = zip.text("mod.json");
+                }
+                const meta = JSON.parse(metaText);
                 const id = String(meta.id ?? "");
                 if (!id) continue;
+                const cur = mods.find(m => m.def.id === id);
+                const version = meta.version ? String(meta.version) : undefined;
                 out.push({
                     path, file, id, name: String(meta.name ?? id),
-                    version: meta.version ? String(meta.version) : undefined,
+                    version,
                     author: meta.author ? String(meta.author) : undefined,
-                    installed: mods.some(m => m.def.id === id),
+                    installed: !!cur,
+                    installedVersion: cur ? modVersion(cur) : undefined,
+                    relation: !cur ? "new" : relationOf(version, modVersion(cur)),
                 });
-            } catch (_) { /* не мод или битый архив */ }
+            } catch (_) { /* не мод или битый архив */ } finally {
+                if (Date.now() - tFile > 20) log(`поиск: ${path} ${Date.now() - tFile} мс`);
+            }
         }
     }
     return out;
 }
 
-/** Подключает мод из найденного архива и копирует его в папку установленных. Бросает исключение с причиной. */
-export function installCandidate(c: Candidate): string {
-    const def = readModZip(c.path);
-    if (!addExternal(def)) throw new Error("мод с таким id уже установлен");
+/** Записывает zip в папку установленных (или поверх старого файла при обновлении). */
+function storeZip(c: Candidate, dest: string): boolean {
     try {
         mkdirs(MODS_DIRS[0]);
-        const dest = MODS_DIRS[0] + "/" + c.file;
         const f = new File(dest, "wb");
         f.write(File.readAllBytes(c.path));
         f.close();
         chmod(dest, 0o666);
-    } catch (e) { log(`копия ${c.file} в mods не удалась: ${e} (мод работает до перезапуска)`); }
+        return true;
+    } catch (e) { log(`копия ${c.file} в mods не удалась: ${e} (мод работает до перезапуска)`); return false; }
+}
+
+/** Подключает мод из найденного архива (или обновляет установленный более старой версии). Возвращает сообщение; бросает исключение с причиной. */
+export function installCandidate(c: Candidate): string {
+    const def = readModZip(c.path);
+    const cur = mods.find(m => m.def.id === def.id);
+    if (cur) {
+        if (c.relation === "same") throw new Error("эта версия уже установлена");
+        const from = modVersion(cur);
+        const dest = cur.def.source ?? MODS_DIRS[0] + "/" + c.file;
+        replaceMod(cur, def);               // при ошибке бросает исключение, прежняя версия остаётся
+        def.source = storeZip(c, dest) ? dest : c.path;
+        log(`мод ${c.relation === "downgrade" ? "откачен" : "обновлён"}: ${def.id} ${from ?? "?"} -> ${modVersion(cur) ?? "?"} (${c.path})`);
+        return `${c.relation === "downgrade" ? "Откат" : "Обновлён"}: ${def.name} ${from ? "v" + from : ""} → v${modVersion(cur) ?? "?"}`;
+    }
+    if (!addExternal(def)) throw new Error("мод с таким id уже установлен");
+    const dest = MODS_DIRS[0] + "/" + c.file;
+    def.source = storeZip(c, dest) ? dest : c.path;
     log(`мод установлен: ${def.id} (${c.path})`);
-    return def.name;
+    return `Установлен: ${def.name}`;
 }
 
 const strList = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -142,12 +193,18 @@ function readModZip(path: string): ModDef {
     def.id = meta.id ?? def.id;
     def.name = meta.name ?? def.name;
     def.description = meta.description ?? def.description;
+    if (meta.version !== undefined) def.version = String(meta.version);
+    if (meta.depends && typeof meta.depends === "object") {
+        def.depends = Object.fromEntries(Object.entries(meta.depends).map(([k, v]) => [k, String(v)]));
+    }
+    if (Array.isArray(meta.loadAfter)) def.loadAfter = strList(meta.loadAfter);
     if (meta.options) def.options = meta.options;
     if (meta.restartRequired !== undefined) def.restartRequired = !!meta.restartRequired;
     if (meta.defaultEnabled !== undefined) def.defaultEnabled = !!meta.defaultEnabled;
     if (!def.id || !/^[\w.-]+$/.test(def.id)) throw new Error("в mod.json нужен id (латиница, цифры, _ . -)");
     if (!def.name) throw new Error("в mod.json нужен name");
 
+    def.source = path;
     const image = (n: string): Uint8Array | null => (n && zip.has(n)) ? zip.read(n) : null;
     def.meta = {
         version: meta.version ? String(meta.version) : undefined,

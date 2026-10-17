@@ -8,6 +8,8 @@ import type { ArtifactChanges, ComboDef, SynergyDef } from "./commands";
 export type { ArtifactChanges, ComboDef, SynergyDef } from "./commands";
 import type { EffectDef } from "./effects";
 export type { EffectDef, HeroView, FieldRef } from "./effects";
+import type { ModEvents } from "./events";
+export type { GameEvents, ModEvents } from "./events";
 
 export interface ModOption {
     key: string;
@@ -91,7 +93,16 @@ export interface ModContext {
     log(msg: string): void;
     /** Класс из Assembly-CSharp (или `Сборка:Класс`, например `UnityEngine.CoreModule:UnityEngine.Time`). */
     cls(name: string): Il2Cpp.Class;
-    /** Полностью заменяет метод. Откатывается автоматически при выключении мода. */
+    /** Шина событий: игровые события (`battleStart`, `enemyDeath`...) и свои события между модами. */
+    readonly events: ModEvents;
+    /** Публикует API мода для других модов (читается через `ctx.mod(id)`). Убирается при выключении мода. */
+    expose(api: unknown): void;
+    /** API другого включённого мода (то, что он передал в `expose`) или undefined. Зависимости включаются раньше, поэтому из `onEnable` зависимого мода оно уже доступно. */
+    mod<T = any>(id: string): T | undefined;
+    /**
+     * Полностью заменяет метод. Откатывается автоматически при выключении мода.
+     * Если этот метод уже заменил другой включённый мод, включение мода отклоняется с сообщением о конфликте.
+     */
     replace(
         className: string, method: string, paramCount: number,
         impl: (this: Il2Cpp.Object, ...args: any[]) => any,
@@ -119,6 +130,18 @@ export interface ModDef {
     id: string;
     name: string;
     description?: string;
+    /** Версия мода (для zip-модов берётся из mod.json). Формат: числа через точку, например "1.2.0". */
+    version?: string;
+    /**
+     * Зависимости: id мода -> допустимые версии (`"*"`, `">=1.2"`, `">=1.0 <2.0"`, `"1.2"` = не ниже).
+     * Зависимости включаются автоматически и раньше мода; выключение зависимости выключает зависимые моды.
+     * Если зависимости нет или версия не подходит, мод не запускается, а в окне «Моды» видна причина.
+     */
+    depends?: Record<string, string>;
+    /** Мягкий порядок: если перечисленные моды включены, этот мод запускается после них (без обязательности). */
+    loadAfter?: string[];
+    /** Путь к установленному .zip (заполняет загрузчик; нужен для удаления мода). */
+    source?: string;
     /** Заполняется загрузчиком для модов из .zip. */
     meta?: ModMeta;
     /** Включён ли мод по умолчанию при первом запуске. */

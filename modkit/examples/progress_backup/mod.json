@@ -1,0 +1,14 @@
+{
+  "id": "progress_backup",
+  "name": "Резерв прогресса",
+  "description": "Копирует сохранения в Download/ModKit/backup/<игра>: после боя и по таймеру. Хранит текущую и предыдущую копию.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": true,
+  "options": [
+    { "key": "minutes", "label": "Раз в N минут", "default": 5, "min": 1, "max": 60, "step": 1 }
+  ]
+}

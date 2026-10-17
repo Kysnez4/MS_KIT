@@ -3,7 +3,8 @@ import { addArtifact, addArtifacts } from "./artifacts";
 import * as cmd from "./commands";
 import * as fx from "./effects";
 import { PORTRAIT_ARRAY, Table, ensureSprite, intList, type Cell } from "./data";
-import { CONFIG_PATH, log, readText, writeText } from "./log";
+import { emit, makeEvents } from "./events";
+import { CONFIG_PATH, log, readText, removeFile, writeText } from "./log";
 
 interface Saved {
     enabled: Record<string, boolean>;
@@ -20,11 +21,108 @@ export interface ModState {
     settings: Record<string, number>;
     cleanups: Array<() => void>;
     ctx?: ModContext;
+    /** Мод сейчас запущен (onEnable выполнен). `enabled` — желание пользователя: мод может быть включён, но заблокирован. */
+    active: boolean;
+    /** Постоянная причина, по которой мод не может запуститься: нет зависимости, не та версия, цикл. */
+    problem?: string;
+    /** Причина последнего отказа при запуске: конфликт с другим модом, зависимость не запустилась. */
+    fault?: string;
+    /** Предупреждения работающего мода (пересечение правок данных с другим модом). */
+    warnings: string[];
+    api?: unknown;
 }
+
+export const modVersion = (st: ModState): string | undefined => st.def.version ?? st.def.meta?.version;
 
 const saved: Saved = { enabled: {}, settings: {} };
 export const mods: ModState[] = [];
 let ready = false;
+/** Порядок запуска: зависимости раньше зависимых (считается в resolveAll). */
+let startOrder: ModState[] = [];
+
+// ---------------------------------------------------------------- зависимости и версии
+
+const parseVer = (v: string): number[] => v.split(/[.\-+]/).map(p => parseInt(p, 10) || 0);
+export function compareVersions(a: string, b: string): number {
+    const x = parseVer(a), y = parseVer(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+        const d = (x[i] ?? 0) - (y[i] ?? 0);
+        if (d) return d < 0 ? -1 : 1;
+    }
+    return 0;
+}
+
+/** Версия подходит под диапазон: `*`, `1.2` (не ниже), `>=1.0 <2.0`, `=1.5`. */
+export function satisfies(version: string | undefined, range: string): boolean {
+    const re = /(>=|<=|>|<|=)?\s*(\d[\w.\-+]*|\*)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(range))) {
+        if (m[2] === "*") continue;
+        if (!version) return false;
+        const c = compareVersions(version, m[2]);
+        const ok = { ">=": c >= 0, "<=": c <= 0, ">": c > 0, "<": c < 0, "=": c === 0 }[m[1] ?? ">="]!;
+        if (!ok) return false;
+    }
+    return true;
+}
+
+/** Пересчитывает постоянные проблемы зависимостей и порядок запуска. Вызывать при любом изменении набора модов. */
+function resolveAll(): void {
+    const byId = new Map(mods.map(m => [m.def.id, m] as const));
+    for (const m of mods) m.problem = undefined;
+    for (const m of mods) {
+        for (const [id, range] of Object.entries(m.def.depends ?? {})) {
+            const d = byId.get(id);
+            const need = range === "*" ? "" : " " + range;
+            if (!d) { m.problem ||= `нужен мод «${id}»${need}`; continue; }
+            if (!satisfies(modVersion(d), range)) {
+                m.problem ||= `нужен «${d.def.name}»${need}, установлена ${modVersion(d) ?? "без версии"}`;
+            }
+        }
+    }
+    const state = new Map<ModState, 1 | 2>();
+    const order: ModState[] = [];
+    const stack: ModState[] = [];
+    const visit = (m: ModState): void => {
+        if (state.get(m) === 2) return;
+        state.set(m, 1);
+        stack.push(m);
+        const edges: Array<[ModState, boolean]> = [];
+        for (const id of Object.keys(m.def.depends ?? {})) { const d = byId.get(id); if (d) edges.push([d, true]); }
+        for (const id of m.def.loadAfter ?? []) { const d = byId.get(id); if (d) edges.push([d, false]); }
+        for (const [d, hard] of edges) {
+            if (state.get(d) === 1) {
+                if (!hard) continue;
+                const cycle = stack.slice(stack.indexOf(d));
+                const text = "циклическая зависимость: " + [...cycle, d].map(x => x.def.id).join(" → ");
+                for (const c of cycle) c.problem ||= text;
+                continue;
+            }
+            visit(d);
+            if (hard && d.problem) m.problem ||= `зависимость «${d.def.name}» недоступна: ${d.problem}`;
+        }
+        stack.pop();
+        state.set(m, 2);
+        order.push(m);
+    };
+    for (const m of mods) visit(m);
+    startOrder = order;
+}
+
+/** Включённые, но не запущенные моды, у которых препятствие исчезло (новая зависимость, освободился метод). */
+function retryBlocked(): void {
+    if (!ready) return;
+    for (const m of startOrder) if (m.enabled && !m.active && !m.problem) runEnable(m);
+}
+
+const dependentsOf = (st: ModState): ModState[] => mods.filter(m => m.enabled && m.def.depends && st.def.id in m.def.depends);
+
+// ---------------------------------------------------------------- конфликты
+
+/** Методы, заменённые через ctx.replace: ключ -> id мода. */
+const replaced = new Map<string, string>();
+/** Ячейки таблиц, изменённые через data.edit: ключ -> id мода. */
+const editedCells = new Map<string, string>();
 
 function load(): void {
     const t = readText(CONFIG_PATH);
@@ -98,7 +196,7 @@ const STABLE_AFTER_MS = 60000;
 /** Вернуть моды к набору прошлой сессии. */
 export function restoreSession(): void {
     const prev = saved.session ?? {};
-    for (const st of mods) setEnabled(st, prev[st.def.id] ?? false);
+    for (const st of startOrder) setEnabled(st, prev[st.def.id] ?? false);
     markSession();
 }
 
@@ -180,6 +278,17 @@ function makeData(st: ModState, getCtx: () => ModContext): ModData {
             const t = new Table(table);
             const i = rowOf(t, id);
             const undo: Array<[string, Cell]> = [];
+            const keys: string[] = [];
+            for (const col of Object.keys(changes)) {
+                const key = `${table}#${id}#${col}`;
+                const other = editedCells.get(key);
+                if (other && other !== st.def.id) {
+                    const w = `«${col}» (${table} #${id}) уже правит мод ${other}`;
+                    st.warnings.push(w);
+                    log(`[${st.def.id}] предупреждение: ${w}`);
+                } else { editedCells.set(key, st.def.id); keys.push(key); }
+            }
+            st.cleanups.push(() => { for (const k of keys) editedCells.delete(k); });
             for (const [col, v] of Object.entries(changes)) undo.push([col, t.set(i, col, v)]);
             st.cleanups.push(() => Il2Cpp.perform(() => {
                 const ti = t.indexOf(id);
@@ -262,10 +371,21 @@ function makeContext(st: ModState): ModContext {
         setSetting(key, value) { st.settings[key] = value; save(); },
         log: msg => log(`[${id}] ${msg}`),
         cls: findClass,
+        events: makeEvents(id, () => st.enabled, st.cleanups),
+        expose(api) { st.api = api; },
+        mod: <T>(modId: string) => mods.find(m => m.def.id === modId && m.active)?.api as T | undefined,
         replace(className, method, paramCount, impl) {
+            const key = `${className}.${method}(${paramCount})`;
+            const owner = replaced.get(key);
+            if (owner && owner !== id) {
+                const err = new Error(`конфликт с модом «${owner}»: оба заменяют ${key}`);
+                (err as any).conflict = true;
+                throw err;
+            }
             const m = findMethod(className, method, paramCount);
             m.implementation = impl as any;
-            st.cleanups.push(() => m.revert());
+            replaced.set(key, id);
+            st.cleanups.push(() => { replaced.delete(key); m.revert(); });
         },
         after: (c, m, n, fn) => attach(c, m, n, "leave", fn),
         before: (c, m, n, fn) => attach(c, m, n, "enter", fn),
@@ -296,31 +416,61 @@ function callMainMenu(st: ModState): void {
 /** Вызывается из ui.ts после построения главного меню: моды могут добавить свои элементы. */
 export function notifyMainMenu(menu: Il2Cpp.Object): void {
     lastMenu = menu;
-    for (const st of mods) if (st.enabled) callMainMenu(st);
+    for (const st of mods) if (st.active) callMainMenu(st);
+    emit("mainMenu", { menu });
 }
 
 function runEnable(st: ModState, deferRevert = false): boolean {
+    if (st.active) return true;
+    const id = st.def.id;
+    st.fault = undefined;
+    if (st.problem) { log(`[${id}] не запущен: ${st.problem}`); return true; }
+    // зависимости включаются автоматически и запускаются раньше
+    for (const depId of Object.keys(st.def.depends ?? {})) {
+        const d = mods.find(m => m.def.id === depId)!;
+        if (!d.enabled) { d.enabled = true; log(`[${id}] включает зависимость ${depId}`); }
+        runEnable(d, deferRevert);
+        if (!d.active) {
+            st.fault = `зависимость «${d.def.name}» не запустилась` + (d.fault ? `: ${d.fault}` : "");
+            log(`[${id}] не запущен: ${st.fault}`);
+            return true;
+        }
+    }
+    st.active = true;
+    st.warnings = [];
     try {
         st.ctx = makeContext(st);
         st.def.onEnable(st.ctx);
         callMainMenu(st);
-        log(`мод включён: ${st.def.id}`);
+        log(`мод включён: ${id}`);
+        emit("modEnabled", { id });
         return true;
     } catch (e) {
-        log(`ошибка включения ${st.def.id}: ${e}`);
+        const conflict = !!(e as any)?.conflict;
+        log(`${conflict ? "конфликт модов" : "ошибка включения"} ${id}: ${e}`);
         runDisable(st);
+        if (conflict) {
+            // конфликт — не сбой игры: мод остаётся включённым в настройках, но ждёт, пока освободится метод
+            st.fault = String((e as Error).message ?? e);
+            return true;
+        }
         st.enabled = false;
-        if (!deferRevert) revertToPrevious(`${st.def.id}: ${e}`);
+        if (!deferRevert) revertToPrevious(`${id}: ${e}`);
         return false;
     }
 }
 
 function runDisable(st: ModState): void {
+    if (!st.active) return;
     try { st.def.onDisable?.(makeContext(st)); } catch (e) { log(`ошибка onDisable ${st.def.id}: ${e}`); }
     for (const c of st.cleanups.splice(0).reverse()) {
         try { c(); } catch (e) { log(`ошибка отката ${st.def.id}: ${e}`); }
     }
+    st.active = false;
+    st.api = undefined;
+    st.warnings = [];
     log(`мод выключен: ${st.def.id}`);
+    emit("modDisabled", { id: st.def.id });
 }
 
 export function register(defs: ModDef[]): void {
@@ -328,8 +478,9 @@ export function register(defs: ModDef[]): void {
     for (const def of defs) {
         const settings: Record<string, number> = {};
         for (const o of def.options ?? []) settings[o.key] = saved.settings[def.id]?.[o.key] ?? o.default;
-        mods.push({ def, enabled: saved.enabled[def.id] ?? def.defaultEnabled ?? false, settings, cleanups: [] });
+        mods.push({ def, enabled: saved.enabled[def.id] ?? def.defaultEnabled ?? false, settings, cleanups: [], active: false, warnings: [] });
     }
+    resolveAll();
 }
 
 /** Добавляет мод, загруженный из файла. false — мод с таким id уже есть. */
@@ -337,9 +488,11 @@ export function addExternal(def: ModDef): boolean {
     if (mods.some(m => m.def.id === def.id)) return false;
     const settings: Record<string, number> = {};
     for (const o of def.options ?? []) settings[o.key] = saved.settings[def.id]?.[o.key] ?? o.default;
-    const st: ModState = { def, enabled: saved.enabled[def.id] ?? def.defaultEnabled ?? false, settings, cleanups: [] };
+    const st: ModState = { def, enabled: saved.enabled[def.id] ?? def.defaultEnabled ?? false, settings, cleanups: [], active: false, warnings: [] };
     mods.push(st);
+    resolveAll();
     if (ready && st.enabled) runEnable(st);
+    retryBlocked();
     return true;
 }
 
@@ -354,7 +507,7 @@ export function start(): void {
     }
     startupDiff = crashed ? null : computeDiff();
     let failed = "";
-    for (const st of mods) if (st.enabled && !runEnable(st, true)) failed ||= st.def.id;
+    for (const st of startOrder) if (st.enabled && !runEnable(st, true)) failed ||= st.def.id;
     saved.booting = true;
     if (failed) revertToPrevious(`не включился мод ${failed}`);
     else if (!startupDiff && !crashed) { saved.session = currentEnabled(); save(); }
@@ -370,14 +523,94 @@ export function setEnabled(st: ModState, value: boolean): void {
     if (st.enabled === value) return;
     st.enabled = value;
     if (!ready) { save(); return; }
-    if (value) runEnable(st); else runDisable(st);
+    if (value) {
+        runEnable(st);
+    } else {
+        // выключение зависимости выключает зависимые моды
+        const off = (m: ModState): void => {
+            for (const d of dependentsOf(m)) { log(`[${d.def.id}] выключен: выключена зависимость ${m.def.id}`); d.enabled = false; off(d); runDisable(d); }
+        };
+        off(st);
+        runDisable(st);
+        retryBlocked();
+    }
     save();
+}
+
+/**
+ * Обновляет установленный мод новой версией (тот же id): выключает его и зависимые, подменяет определение,
+ * запускает обратно. Включённость и настройки сохраняются. При ошибке возвращается прежняя версия и бросается исключение.
+ */
+export function replaceMod(st: ModState, def: ModDef): void {
+    const oldDef = st.def, oldSettings = st.settings;
+    const wasEnabled = st.enabled;
+    const range = (m: ModState) => m.def.depends?.[st.def.id];
+    // новая версия не должна ломать зависимые моды
+    for (const m of mods) {
+        const r = range(m);
+        if (m !== st && r && !satisfies(def.version ?? def.meta?.version, r)) {
+            throw new Error(`мод «${m.def.name}» требует ${st.def.id} ${r}, а в обновлении ${def.version ?? def.meta?.version ?? "версия не указана"}`);
+        }
+    }
+    const chain = startOrder.filter(m => m !== st && m.active && dependentNames(st).includes(m.def.name));
+    for (const m of [...chain].reverse()) runDisable(m);
+    runDisable(st);
+
+    const load = (d: ModDef, saved0: Record<string, number>): void => {
+        st.def = d;
+        st.settings = {};
+        for (const o of d.options ?? []) {
+            const v = saved0[o.key] ?? o.default;
+            st.settings[o.key] = Math.min(o.max, Math.max(o.min, v));
+        }
+        st.problem = st.fault = undefined;
+        resolveAll();
+    };
+    const restart = (): boolean => {
+        if (wasEnabled) runEnable(st, true);
+        const ok = !wasEnabled || st.active;
+        for (const m of chain) if (m.enabled) runEnable(m, true);
+        return ok;
+    };
+
+    load(def, oldSettings);
+    if (restart()) { save(); log(`мод обновлён: ${def.id} ${modVersion(st) ?? ""}`); return; }
+    const why = st.problem ?? st.fault ?? "ошибка при запуске";
+    log(`обновление ${def.id} не удалось (${why}): возвращаю прежнюю версию`);
+    runDisable(st);
+    st.enabled = wasEnabled;
+    load(oldDef, oldSettings);
+    restart();
+    save();
+    throw new Error(`новая версия не запустилась: ${why}. Осталась прежняя`);
+}
+
+/** Моды, которые сломаются без этого (включённые зависимые, в том числе через цепочку). */
+export function dependentNames(st: ModState): string[] {
+    const out = new Set<ModState>();
+    const walk = (m: ModState): void => { for (const d of dependentsOf(m)) if (!out.has(d)) { out.add(d); walk(d); } };
+    walk(st);
+    return [...out].map(m => m.def.name);
+}
+
+/** Удаляет установленный zip-мод: выключает (вместе с зависимыми), стирает файл, убирает из списка. */
+export function removeMod(st: ModState): void {
+    if (!st.def.meta) throw new Error("встроенный мод удалить нельзя");
+    setEnabled(st, false);
+    if (st.def.source && !removeFile(st.def.source)) log(`[${st.def.id}] файл ${st.def.source} удалить не удалось`);
+    const i = mods.indexOf(st);
+    if (i >= 0) mods.splice(i, 1);
+    delete saved.settings[st.def.id];
+    delete saved.enabled[st.def.id];
+    resolveAll();
+    save();
+    log(`мод удалён: ${st.def.id}`);
 }
 
 /** Меняет число в настройке; мод перезапускается, чтобы подхватить значение. */
 export function setSetting(st: ModState, key: string, value: number): void {
     st.settings[key] = value;
-    if (ready && st.enabled) {
+    if (ready && st.active) {
         runDisable(st);
         runEnable(st);
     }

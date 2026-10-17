@@ -118,25 +118,30 @@ function roundedPng(w: number, h: number, r: number): Uint8Array {
     }
     const adler = ((bsum << 16) | a) >>> 0;
     z[o++] = adler >>> 24; z[o++] = (adler >>> 16) & 255; z[o++] = (adler >>> 8) & 255; z[o++] = adler & 255;
-    const out: number[] = [137, 80, 78, 71, 13, 10, 26, 10];
+    const parts: Uint8Array[] = [Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])];
     const chunk = (type: string, data: Uint8Array) => {
         const buf = new Uint8Array(12 + data.length), dv = new DataView(buf.buffer);
         dv.setUint32(0, data.length);
         for (let i = 0; i < 4; i++) buf[4 + i] = type.charCodeAt(i);
         buf.set(data, 8);
         dv.setUint32(8 + data.length, crc32(buf, 4, 8 + data.length));
-        out.push(...buf);
+        parts.push(buf);                               // не push(...buf): у большого буфера движок падает с «too many arguments»
     };
     const ihdr = new Uint8Array(13), hv = new DataView(ihdr.buffer);
     hv.setUint32(0, w); hv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 6;
     chunk("IHDR", ihdr); chunk("IDAT", z.subarray(0, o)); chunk("IEND", new Uint8Array(0));
-    return Uint8Array.from(out);
+    const png = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) { png.set(p, at); at += p.length; }
+    return png;
 }
 
 const roundTex = new Map<string, Il2Cpp.Object>();
+const roundFailed = new Set<string>();
 /** Текстура скруглённого прямоугольника (кэшируется по размеру); null, если собрать не удалось. */
 function roundedTexture(w: number, h: number, r: number): Il2Cpp.Object | null {
     const key = `${w}x${h}x${r}`;
+    if (roundFailed.has(key)) return null;
     const old = roundTex.get(key);
     if (old && !old.handle.add(0x10).readPointer().isNull()) return old;     // m_CachedPtr: не выгружена игрой
     try {
@@ -150,7 +155,7 @@ function roundedTexture(w: number, h: number, r: number): Il2Cpp.Object | null {
         try { tex.ref(true); } catch (_) { /* без закрепления */ }
         roundTex.set(key, tex);
         return tex;
-    } catch (e) { log("скруглённая кнопка: " + e); return null; }
+    } catch (e) { roundFailed.add(key); log("скруглённая кнопка: " + e); return null; }
 }
 
 /** Радиус скругления кнопок в логических пикселях. */

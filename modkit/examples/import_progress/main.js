@@ -1,6 +1,7 @@
 // Перенос прогресса из оригинальной игры (com.vkslrzm.Zombie) в Zombix.
 // Сохранение — набор шифрованных *.json в Android/data/<пакет>/files. Копируется весь набор целиком (файлы сверяются друг с другом).
 // Источники по порядку: папка оригинала напрямую; Download/ModKit/progress (туда файлы кладёт пользователь или этот же мод из оригинала с ModKit).
+// Источники: ещё и резервные копии мода «Резерв прогресса» (Download/ModKit/backup/<пакет>/latest|prev).
 // Перед заменой текущие сохранения уходят в modkit/progress_backup/<время>. После записи игра закрывается, иначе она перезапишет файлы из памяти.
 const K = ModKit;
 const U = K.ui;
@@ -8,6 +9,7 @@ const ORIGINAL_PKG = "com.vkslrzm.Zombie";
 const ORIGINAL_DIR = `/sdcard/Android/data/${ORIGINAL_PKG}/files`;
 const SHARED_DIR = "/sdcard/Download/ModKit/progress";
 const BACKUP_DIR = K.dir + "/progress_backup";
+const BACKUP_ROOT = "/sdcard/Download/ModKit/backup";   // сюда пишет мод «Резерв прогресса»
 const IS_ORIGINAL = K.pkg === ORIGINAL_PKG;
 const libc = n => Process.getModuleByName("libc.so").getExportByName(n);
 
@@ -134,35 +136,40 @@ function openWindow() {
     });
 
     const main = () => show(() => {
+        let y = 0;
         if (IS_ORIGINAL) {
             text(0, "Выложить сохранения этой игры в Download/ModKit/progress, чтобы забрать их в Zombix. Файл на диске обновляется автосохранением игры.", 150);
-            btn(170, "Экспортировать прогресс", green, () => done(exportSaves()));
-            return;
+            btn(160, "Экспортировать прогресс", green, () => done(exportSaves()));
+            y = 270;
         }
-        const found = [inspect("Оригинальная игра", ORIGINAL_DIR), inspect("Download/ModKit/progress", SHARED_DIR)];
-        const src = found.find(s => !s.problem) || null;
-        let y = 0;
-        for (const s of found) {
-            text(y, `${s.title}: ${s.problem || describe(s)}`, 70, 22, s.problem ? color(0.65, 0.65, 0.65, 1) : color(0.5, 1, 0.5, 1));
-            y += 76;
-        }
-        const now = inspect("Zombix", K.appDir);
-        text(y, `Сейчас в Zombix: ${now.problem || describe(now)}`, 70, 22, color(0.9, 0.8, 0.5, 1));
+        const now = inspect(IS_ORIGINAL ? "Оригинал" : "Zombix", K.appDir);
+        text(y, `Сейчас в игре: ${now.problem || describe(now)}`, 70, 22, color(0.9, 0.8, 0.5, 1));
         y += 90;
-        if (src) {
-            btn(y, `Импортировать из: ${src.title}`, green, () => confirm(src));
-            y += 100;
-        } else {
-            text(y, "Источник не найден: Android закрыл доступ к папке оригинала. Скопируйте файлы *.json из Android/data/com.vkslrzm.Zombie/files в Download/ModKit/progress (на телефоне или с ПК) и откройте окно снова.", 260, 22, color(0.95, 0.8, 0.6, 1));
-            y += 270;
-        }
+        // источники: оригинал напрямую, общая папка, резервные копии мода «Резерв прогресса» обеих игр (latest — свежая, prev — предыдущая)
+        const own = K.pkg;
+        const cands = [
+            ...(IS_ORIGINAL ? [] : [["Оригинал (напрямую)", ORIGINAL_DIR]]),
+            ["Download/ModKit/progress", SHARED_DIR],
+            ["Резерв оригинала", `${BACKUP_ROOT}/${ORIGINAL_PKG}/latest`],
+            ["Резерв оригинала, прошлая", `${BACKUP_ROOT}/${ORIGINAL_PKG}/prev`],
+            ...(own === ORIGINAL_PKG ? [] : [["Резерв Zombix", `${BACKUP_ROOT}/${own}/latest`], ["Резерв Zombix, прошлая", `${BACKUP_ROOT}/${own}/prev`]]),
+        ];
+        const ok = cands.map(([t, d]) => inspect(t, d)).filter(x => !x.problem);
         const last = (listDir(BACKUP_DIR, n => /^\d{14}$/.test(n)) || []).pop();
         if (last) {
-            const b = inspect("Копия " + last, `${BACKUP_DIR}/${last}`);
-            if (!b.problem) {
-                btn(y, `Вернуть копию ${last.substring(6, 8)}.${last.substring(4, 6)} ${last.substring(8, 10)}:${last.substring(10, 12)}`, blue, () => confirm(b));
-                y += 100;
-            }
+            const bk = inspect("Копия перед импортом " + last.substring(6, 8) + "." + last.substring(4, 6) + " " + last.substring(8, 10) + ":" + last.substring(10, 12), `${BACKUP_DIR}/${last}`);
+            if (!bk.problem) ok.push(bk);
+        }
+        if (!ok.length) {
+            text(y, "Источников не найдено. Включите мод «Резерв прогресса» в оригинале (он кладёт копию в Download/ModKit/backup) либо скопируйте файлы *.json в Download/ModKit/progress и откройте окно снова.", 260, 22, color(0.95, 0.8, 0.6, 1));
+            return;
+        }
+        text(y, "Вернуть прогресс из:", 40, 24, gold());
+        y += 50;
+        for (const src of ok) {
+            text(y, describe(src), 36, 21, color(0.5, 1, 0.5, 1));
+            btn(y + 40, src.title, blue, () => confirm(src));
+            y += 140;
         }
     });
     main();

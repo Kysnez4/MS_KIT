@@ -1,0 +1,10 @@
+{
+  "id": "test_lib",
+  "name": "Тест: библиотека",
+  "description": "Считает убийства и отдаёт API другим модам.",
+  "version": "1.2",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false
+}

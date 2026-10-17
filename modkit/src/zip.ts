@@ -79,3 +79,72 @@ export class ZipReader {
     }
     text(name: string): string { return utf8(this.read(name)).replace(/^﻿/, ""); }
 }
+
+/**
+ * Читает из .zip на диске ОДИН файл, не загружая архив целиком (open/pread из libc): конец архива, каталог, нужная запись.
+ * Для просмотра mod.json в больших архивах (музыка, картинки) это в сотни раз быстрее, чем читать файл полностью.
+ */
+let io: {
+    open: NativeFunction<number, [NativePointer, number]>;
+    close: NativeFunction<number, [number]>;
+    lseek: NativeFunction<Int64, [number, number, number]>;
+    pread: NativeFunction<Int64, [number, NativePointer, number, number]>;
+} | null = null;
+
+/** Размер файла в байтах (open/lseek); -1, если не открылся. */
+export function fileSize(path: string): number {
+    ioInit();
+    const fd = io!.open(Memory.allocUtf8String(path), 0);
+    if (fd < 0) return -1;
+    try { return Number(io!.lseek(fd, 0, 2)); } finally { io!.close(fd); }
+}
+
+function ioInit(): void {
+    if (io) return;
+    const libc = Process.getModuleByName("libc.so");
+    io = {
+        open: new NativeFunction(libc.getExportByName("open"), "int", ["pointer", "int"]),
+        close: new NativeFunction(libc.getExportByName("close"), "int", ["int"]),
+        lseek: new NativeFunction(libc.getExportByName("lseek"), "int64", ["int", "int64", "int"]) as any,
+        pread: new NativeFunction(libc.getExportByName("pread"), "int64", ["int", "pointer", "uint64", "int64"]) as any,
+    };
+}
+
+export function readZipEntry(path: string, name: string): Uint8Array {
+    ioInit();   // NativeFunction создаётся один раз: каждый new NativeFunction генерирует машинный код и стоит миллисекунды
+    const { open, close, lseek, pread } = io!;
+    const fd = open(Memory.allocUtf8String(path), 0);
+    if (fd < 0) throw new Error("файл не открылся");
+    try {
+        const size = Number(lseek(fd, 0, 2));
+        const at = (offset: number, len: number): Uint8Array => {
+            const buf = Memory.alloc(Math.max(1, len));
+            const n = Number(pread(fd, buf, len, offset));
+            if (n !== len) throw new Error("чтение zip оборвалось");
+            return new Uint8Array(buf.readByteArray(len) as ArrayBuffer);
+        };
+        const tailLen = Math.min(size, 22 + 65535);
+        const tail = at(size - tailLen, tailLen);
+        let eocd = -1;
+        for (let i = tail.length - 22; i >= 0; i--) if (u32(tail, i) === 0x06054b50) { eocd = i; break; }
+        if (eocd < 0) throw new Error("не zip-архив");
+        const count = u16(tail, eocd + 10), cdSize = u32(tail, eocd + 12), cdOff = u32(tail, eocd + 16);
+        const cd = at(cdOff, cdSize);
+        for (let p = 0, n = 0; n < count && p + 46 <= cd.length; n++) {
+            const nameLen = u16(cd, p + 28), extraLen = u16(cd, p + 30), commentLen = u16(cd, p + 32);
+            // имена не декодируем: в больших архивах (тысячи записей) это секунды; сравниваем байты
+            let hit = nameLen === name.length;
+            for (let i = 0; hit && i < nameLen; i++) if (cd[p + 46 + i] !== name.charCodeAt(i)) hit = false;
+            if (hit) {
+                const method = u16(cd, p + 10), csize = u32(cd, p + 20), usize = u32(cd, p + 24), off = u32(cd, p + 42);
+                const lh = at(off, 30);
+                const raw = at(off + 30 + u16(lh, 26) + u16(lh, 28), csize);
+                if (method === 0) return raw;
+                if (method === 8) return inflateRaw(raw, usize);
+                throw new Error(`метод сжатия ${method} не поддерживается`);
+            }
+            p += 46 + nameLen + extraLen + commentLen;
+        }
+        throw new Error("в архиве нет " + name);
+    } finally { close(fd); }
+}

@@ -46,6 +46,14 @@ export function mkdirs(path: string): void {
     } catch (_) { /* не критично */ }
 }
 
+/** Удаляет файл (libc unlink). true — удалён. */
+export function removeFile(path: string): boolean {
+    try {
+        const unlink = new NativeFunction(Process.getModuleByName("libc.so").getExportByName("unlink"), "int", ["pointer"]);
+        return unlink(Memory.allocUtf8String(path)) === 0;
+    } catch (_) { return false; }
+}
+
 let alogFn: NativeFunction<number, [number, NativePointer, NativePointer]> | null = null;
 /** Дублирует сообщение в logcat (тег modkit) — видно через `adb logcat -s modkit`, даже если файловый лог недоступен. */
 export function alog(msg: string): void {

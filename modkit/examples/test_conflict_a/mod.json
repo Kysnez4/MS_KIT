@@ -1,0 +1,10 @@
+{
+  "id": "test_conflict_a",
+  "name": "Тест: конфликт A",
+  "description": "Заменяет C_Battle_Manager.Test_TimeSec (в игре не вызывается).",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false
+}
