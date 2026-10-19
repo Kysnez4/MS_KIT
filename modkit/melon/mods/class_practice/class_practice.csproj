@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>class_practice</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Il2CppACTk.Runtime"><HintPath>$(Ref)\il2cpp\Il2CppACTk.Runtime.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
