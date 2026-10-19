@@ -31,7 +31,7 @@ namespace ClassMenu
 
         public ModDef Define() => new ModDef
         {
-            Id = "class_menu", Name = "Классы мода", Version = "4.1",
+            Id = "class_menu", Name = "Классы мода", Version = "4.2",
             Description = "Карта классов: все классы игры и новые классы модов. Кнопка на экране классов или «Настройки» мода.",
             Options =
             {
@@ -106,9 +106,9 @@ namespace ClassMenu
                     {
                         var t = new Table("Class"); int row = t.IndexOf(cid); if (row < 0) { ctx.Log("строка класса не найдена"); return; }
                         void W(string col, object v) { saved.Add((row, col, t.Set(row, col, v))); }
-                        for (int k = 1; k <= 6; k++)
+                        for (int k = 1; k <= 9; k++)       // слоты 8, 9 игра у школ не читает, но обнуляем; слот 7 — мастерство (практика ≥46), иначе остался бы бонус родного класса
                         {
-                            var ef = k <= c.Effects.Count ? c.Effects[k - 1] : (1, 0.0);
+                            var ef = k <= 7 && k <= c.Effects.Count ? c.Effects[k - 1] : (1, 0.0);
                             W($"효과ID_{k:00}", ef.Item1); W($"효과ID_{k:00}값", ef.Item2);
                         }
                         W("이름", c.Name);
@@ -123,7 +123,7 @@ namespace ClassMenu
                             W($"설명줄{k:00} 색깔", k == 1 ? "<color=#FFD966>" : "<color=#FFFFFF>");
                         }
                         W("효과 설명줄 개수", Math.Max(1, Math.Min(6, lines.Count)));
-                        ctx.Log($"класс игры {cid} заменён классом мода «{c.Name}»: {Math.Min(6, c.Effects.Count)} эфф.");
+                        ctx.Log($"класс игры {cid} заменён классом мода «{c.Name}»: {Math.Min(7, c.Effects.Count)} эфф.");
                     }
                     catch (Exception e) { ctx.Log("подмена класса: " + e.Message); Restore(); }
                 }
