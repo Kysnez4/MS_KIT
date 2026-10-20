@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>modkit_companions</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_combat"><HintPath>../modkit_combat/bin/Release/net8.0/modkit_combat.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_spells"><HintPath>../modkit_spells/bin/Release/net8.0/modkit_spells.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

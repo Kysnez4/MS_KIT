@@ -1,0 +1,15 @@
+{
+  "id": "api_probe",
+  "name": "Проба API 2",
+  "description": "Отладка: Triggers, Research, Toast, Spell(stat), ReadAsset, Hero.Shield. Строки [api_probe] в modkit.log.",
+  "version": "1.7",
+  "depends": {
+    "modkit_triggers": ">=1.0",
+    "modkit_combat": ">=1.0",
+    "modkit_companions": ">=1.0",
+    "modkit_spells": ">=1.0",
+    "modkit_research": ">=1.0",
+    "modkit_hero": ">=1.0",
+    "modkit_effects": ">=1.0"
+  }
+}

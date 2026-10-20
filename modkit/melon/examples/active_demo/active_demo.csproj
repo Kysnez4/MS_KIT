@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>active_demo</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_spells"><HintPath>../../mods/modkit_spells/bin/Release/net8.0/modkit_spells.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

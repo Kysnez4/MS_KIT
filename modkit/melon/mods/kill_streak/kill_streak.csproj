@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>kill_streak</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_effects"><HintPath>../modkit_effects/bin/Release/net8.0/modkit_effects.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_spells"><HintPath>../modkit_spells/bin/Release/net8.0/modkit_spells.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

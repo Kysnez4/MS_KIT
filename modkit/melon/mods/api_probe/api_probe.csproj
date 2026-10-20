@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>api_probe</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_combat"><HintPath>../modkit_combat/bin/Release/net8.0/modkit_combat.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_companions"><HintPath>../modkit_companions/bin/Release/net8.0/modkit_companions.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_effects"><HintPath>../modkit_effects/bin/Release/net8.0/modkit_effects.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_hero"><HintPath>../modkit_hero/bin/Release/net8.0/modkit_hero.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_research"><HintPath>../modkit_research/bin/Release/net8.0/modkit_research.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_spells"><HintPath>../modkit_spells/bin/Release/net8.0/modkit_spells.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_triggers"><HintPath>../modkit_triggers/bin/Release/net8.0/modkit_triggers.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

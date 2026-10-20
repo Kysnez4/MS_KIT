@@ -1,0 +1,1 @@
+{ "id": "hello_addon", "name": "Привет: дополнение", "description": "Зависит от мода «Привет».", "version": "1.0", "depends": { "hello": ">=1.0" } }

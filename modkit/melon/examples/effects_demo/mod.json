@@ -1,0 +1,11 @@
+{
+  "id": "effects_demo",
+  "name": "Демо: свои эффекты",
+  "description": "Артефакт «Руна ModKit»: +5 снарядов магической пули и молний (эффект 10003) и +30% урона пули (10001).",
+  "version": "1.0",
+  "depends": {
+    "modkit_data": ">=1.5",
+    "modkit_effects": ">=1.0",
+    "modkit_artifacts": ">=1.0"
+  }
+}

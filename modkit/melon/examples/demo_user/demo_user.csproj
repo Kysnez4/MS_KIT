@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>demo_user</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="demo_lib"><HintPath>../demo_lib/bin/Release/net8.0/demo_lib.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

@@ -274,13 +274,14 @@ namespace ModKit
             public void OnCleanup(Action fn) => _st.Cleanups.Add(fn);
 
             public IRegistry<T> Registry<T>(string name) => Registries.Get<T>(name, Id, _st.Cleanups);
-            public void DefineEffect(EffectDef def) => Effects.Define(def, this, _st.Cleanups);
-            public void SetGlobalEffects((int Id, double Value)[] pairs) => Effects.SetGlobal(Id, pairs.Select(p => (p.Id, p.Value)).ToArray(), _st.Cleanups);
-            public void OnHeroPass(Action<IHeroView> fn) => Effects.AddPass(Id, fn, _st.Cleanups);
-            private ISpells _spells;
-            public ISpells Spells => _spells ?? (_spells = new SpellApi(Id, _st.Cleanups, Every));
-            public IGame Game => GameApi.Instance();
-            public void UseBuiltinEffects() => Effects.UseBuiltin(this, _st.Cleanups);
+            public IScreen Screen => ScreenApi.Instance();
+            public void Toast(string text, double sec = 3) => Toasts.Show(this, text, sec);
+            public byte[] ReadAsset(string path) => Assets.Read(_st.Def.Source, path);
+            private GameTimer _timer; private IStore _store;
+            private GameTimer TimerImpl => _timer ?? (_timer = new GameTimer(Every, Guard, _st.Cleanups));
+            public IGameTimer Timer => TimerImpl;
+            public IStore Store => _store ?? (_store = new StoreImpl(Id));
+            public ITags Tags => new TagsImpl();
             public void Guard(string what, Action fn) { Crash.Enter(Id, what); try { fn(); } catch (Exception e) { Crash.Error(Id, what, e); } Crash.Leave(); }
             public void Error(string msg) { _st.Warnings.Add("ОШИБКА: " + msg); Crash.Error(Id, "ctx.Error", new Exception(msg)); }
             public void Mark(string what) { Crash.Enter(Id, what); }

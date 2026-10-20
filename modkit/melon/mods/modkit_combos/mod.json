@@ -1,0 +1,10 @@
+{
+  "id": "modkit_combos",
+  "name": "ModKit: комбинации",
+  "description": "Библиотека: готовый рецепт для комбинаций (таблица MagicCom): новая комбинация и правка.",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_data": ">=1.5"
+  }
+}

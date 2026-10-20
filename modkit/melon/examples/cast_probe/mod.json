@@ -1,0 +1,27 @@
+{
+  "id": "cast_probe",
+  "name": "Проба: ручной каст огненного шара",
+  "description": "Отключает авто-каст Огненного шара и кастует его вручную каждые N секунд (MoveNext корутины).",
+  "version": "1.2",
+  "options": [
+    {
+      "key": "every",
+      "label": "Каст раз в, с (0 = как в игре)",
+      "default": 0,
+      "min": 0,
+      "max": 30,
+      "step": 1
+    },
+    {
+      "key": "steps",
+      "label": "Шагов MoveNext за каст",
+      "default": 2,
+      "min": 1,
+      "max": 6,
+      "step": 1
+    }
+  ],
+  "depends": {
+    "modkit_spells": ">=1.0"
+  }
+}

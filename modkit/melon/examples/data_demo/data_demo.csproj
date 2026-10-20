@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>data_demo</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_data"><HintPath>../../mods/modkit_data/bin/Release/net8.0/modkit_data.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_artifacts"><HintPath>../../mods/modkit_artifacts/bin/Release/net8.0/modkit_artifacts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_combos"><HintPath>../../mods/modkit_combos/bin/Release/net8.0/modkit_combos.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_synergies"><HintPath>../../mods/modkit_synergies/bin/Release/net8.0/modkit_synergies.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

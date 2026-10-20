@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>class_pack</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="class_menu"><HintPath>../../mods/class_menu/bin/Release/net8.0/class_menu.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

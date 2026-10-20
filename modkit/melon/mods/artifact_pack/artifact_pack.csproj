@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>artifact_pack</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_data"><HintPath>../modkit_data/bin/Release/net8.0/modkit_data.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_artifacts"><HintPath>../modkit_artifacts/bin/Release/net8.0/modkit_artifacts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_synergies"><HintPath>../modkit_synergies/bin/Release/net8.0/modkit_synergies.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

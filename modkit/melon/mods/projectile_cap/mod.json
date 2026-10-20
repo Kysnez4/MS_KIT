@@ -1,0 +1,13 @@
+{
+  "id": "projectile_cap",
+  "name": "Лимит снарядов",
+  "description": "У каждой магии свой предел числа снарядов; сверх предела — бонус урона и стата. Спутники ×2 с кругом B, духи ×2 с Валькирией.",
+  "version": "2.0",
+  "author": "Pavel",
+  "main": "projectile_cap.dll",
+  "restartRequired": false,
+  "defaultEnabled": false,
+  "depends": {
+    "modkit_effects": ">=1.0"
+  }
+}

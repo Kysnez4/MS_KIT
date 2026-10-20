@@ -100,6 +100,7 @@ namespace ModKit
         ModEvents Events { get; }
         /// <summary>Публикует API мода для других модов (читается через <see cref="Mod{T}"/>). Убирается при выключении.</summary>
         void Expose(object api);
+        /// <summary>API другого включённого мода (то, что он отдал через <see cref="Expose"/>); null — мода нет или он выключен. Для библиотек: <see cref="ModContextExt.Use{T}"/>.</summary>
         T Mod<T>(string id) where T : class;
 
         /// <summary>
@@ -120,21 +121,16 @@ namespace ModKit
         /// </summary>
         IRegistry<T> Registry<T>(string name);
 
-        /// <summary>Регистрирует свой эффект артефакта/комбинации (ID >= 10000). Снимается при выключении мода.</summary>
-        void DefineEffect(EffectDef def);
-        /// <summary>Эффекты мода без привязки к артефакту: пары (ID эффекта игры, значение). Пустой массив снимает.</summary>
-        void SetGlobalEffects((int Id, double Value)[] pairs);
-        /// <summary>Подключает встроенные эффекты 10001–10004 (урон пули %, перезарядка −%, снарядов +N, радиус сбора %).</summary>
-        void UseBuiltinEffects();
-        /// <summary>
-        /// Проход по герою: fn вызывается после каждого пересчёта характеристик и раз в ~0,7 с, пока идёт бой. Через view.Field(...).Value
-        /// читается значение игры (база), запись задаёт результат; поля, которых проход перестал касаться, возвращаются к базе.
-        /// </summary>
-        void OnHeroPass(Action<IHeroView> fn);
-        /// <summary>Заклинания героя: уровень, отключение авто-каста, ручной каст. Авто-каст возвращается при выключении мода.</summary>
-        ISpells Spells { get; }
-        /// <summary>Состояние игры: класс, зона, время боя, артефакты, уровни заклинаний, практика классов. Событие battleResult приходит после End_Battle.</summary>
-        IGame Game { get; }
+        /// <summary>Короткая подпись на экране на sec секунд (по игровому времени).</summary>
+        void Toast(string text, double sec = 3);
+        /// <summary>Файл из zip этого мода (путь внутри архива, например "icons/a.png"); null — нет файла или мод не из zip.</summary>
+        byte[] ReadAsset(string path);
+        /// <summary>Таймеры по игровому времени (на паузе стоят).</summary>
+        IGameTimer Timer { get; }
+        /// <summary>Постоянное хранилище мода (JSON).</summary>
+        IStore Store { get; }
+        /// <summary>Общие теги заклинаний, артефактов, врагов.</summary>
+        ITags Tags { get; }
 
         /// <summary>
         /// Выполняет fn под защитой: исключение C# не пробрасывается дальше, а пишется в журнал («ОШИБКА [мод] что: ...»).
@@ -170,5 +166,61 @@ namespace ModKit
     {
         public string Registry, Id, Owner;
         public bool Added;
+    }
+}
+
+namespace ModKit
+{
+    /// <summary>
+    /// Библиотека, отдающая свой API по моду-вызывающему: <see cref="For"/> получает ModContext, и всё, что библиотека меняет (хуки, правки, таймеры),
+    /// откатывается при выключении именно этого мода. Библиотека публикует себя так: ctx.Expose(this) в OnEnable.
+    /// </summary>
+    public interface ILibrary<T> where T : class
+    {
+        T For(ModContext ctx);
+    }
+
+    public static class ModContextExt
+    {
+        /// <summary>
+        /// API библиотеки для этого мода: <c>var combat = ctx.Use&lt;ICombat&gt;("modkit_combat");</c>. Повторный вызов возвращает тот же объект.
+        /// Бросает исключение, если библиотека не включена (добавьте её в depends мода).
+        /// </summary>
+        public static T Use<T>(this ModContext ctx, string libraryId) where T : class
+        {
+            var key = (ctx.Id, libraryId, typeof(T));
+            lock (UseCache)
+            {
+                if (UseCache.TryGetValue(key, out var cached)) return (T)cached;
+                var lib = ctx.Mod<ILibrary<T>>(libraryId) ?? throw new InvalidOperationException($"библиотека «{libraryId}» не включена: добавьте её в depends мода {ctx.Id}");
+                var api = lib.For(ctx);
+                UseCache[key] = api;
+                ctx.OnCleanup(() => { lock (UseCache) UseCache.Remove(key); });
+                return api;
+            }
+        }
+
+        /// <summary>Объекты библиотек по (мод, библиотека, тип): один экземпляр на мод, пока он включён (внутри — хуки, таймеры и состояние мода).</summary>
+        private static readonly Dictionary<(string, string, Type), object> UseCache = new Dictionary<(string, string, Type), object>();
+
+        /// <summary>
+        /// Список отката, привязанный к моду: всё, что в него добавлено, выполняется (в обратном порядке) при выключении мода.
+        /// Для библиотек, чьи внутренние классы принимают List&lt;Action&gt; cleanups.
+        /// </summary>
+        public static List<Action> CleanupList(this ModContext ctx)
+        {
+            var list = new List<Action>();
+            ctx.OnCleanup(() =>
+            {
+                var items = new List<Action>(list);
+                list.Clear();
+                items.Reverse();
+                foreach (var a in items)
+                {
+                    try { a(); } catch (Exception e) { ctx.Log("ошибка отката: " + e.Message); }
+                }
+            });
+            return list;
+        }
     }
 }

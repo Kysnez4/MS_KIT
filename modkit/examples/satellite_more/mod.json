@@ -1,0 +1,11 @@
+{
+  "id": "satellite_more",
+  "name": "Больше спутников",
+  "description": "Ровный круг при большом числе спутников; сверх 14 игра рисует клонами в разрыве кольца (группы A и B).",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": false
+}

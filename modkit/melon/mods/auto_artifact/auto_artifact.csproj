@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\Mod.props" />
+  <PropertyGroup><AssemblyName>auto_artifact</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_data"><HintPath>../modkit_data/bin/Release/net8.0/modkit_data.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

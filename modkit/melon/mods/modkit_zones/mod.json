@@ -1,0 +1,10 @@
+{
+  "id": "modkit_zones",
+  "name": "ModKit: зоны",
+  "description": "Библиотека: зоны с периодическим эффектом на врагов.",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_combat": ">=1.0"
+  }
+}

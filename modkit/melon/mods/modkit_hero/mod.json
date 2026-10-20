@@ -1,0 +1,7 @@
+{
+  "id": "modkit_hero",
+  "name": "ModKit: герой",
+  "description": "Библиотека: здоровье героя, лечение, щит мода.",
+  "version": "1.0",
+  "library": true
+}

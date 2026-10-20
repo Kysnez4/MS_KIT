@@ -1,0 +1,10 @@
+{
+  "id": "modkit_spells",
+  "name": "ModKit: заклинания",
+  "description": "Библиотека: уровни заклинаний героя, отключение авто-каста, ручной каст, активные заклинания; view.Spell(id, stat).",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_effects": ">=1.0"
+  }
+}

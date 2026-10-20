@@ -1,0 +1,15 @@
+{
+  "id": "combat_probe",
+  "name": "Проба боевого API",
+  "description": "Отладка: раз в 6 с игрового времени проверяет ctx.Enemies/Combat/Hero/Zones/Resource и пишет результаты в modkit.log (строки [combat_probe]).",
+  "version": "1.4",
+  "depends": {
+    "modkit_combat": ">=1.0",
+    "modkit_zones": ">=1.0",
+    "modkit_game": ">=1.0",
+    "modkit_resources": ">=1.0",
+    "modkit_spells": ">=1.0",
+    "modkit_hero": ">=1.0",
+    "modkit_effects": ">=1.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "data_demo",
+  "name": "Демо: правка таблиц",
+  "description": "Меняет имя артефакта 41 и добавляет копию. Выключение откатывает.",
+  "version": "1.0",
+  "depends": {
+    "modkit_data": ">=1.5",
+    "modkit_artifacts": ">=1.0",
+    "modkit_combos": ">=1.0",
+    "modkit_synergies": ">=1.0"
+  }
+}

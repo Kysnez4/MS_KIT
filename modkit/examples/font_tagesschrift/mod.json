@@ -1,0 +1,10 @@
+{
+  "id": "ext_font_tagesschrift",
+  "name": "Шрифт Tagesschrift",
+  "description": "Заменяет шрифт русского текста на Tagesschrift Cyrillic.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": true
+}

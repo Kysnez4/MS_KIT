@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>modkit_zones</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_combat"><HintPath>../modkit_combat/bin/Release/net8.0/modkit_combat.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

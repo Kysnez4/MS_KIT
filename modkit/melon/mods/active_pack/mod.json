@@ -1,0 +1,153 @@
+{
+  "id": "active_pack",
+  "name": "Активные заклинания: набор",
+  "description": "Ручной каст: кнопки на экране боя вместо авто-каста для выбранных заклинаний (до 4). «Настройки» — выбор заклинаний. Проверен только Огненный шар, остальное на устройстве не проверено.",
+  "version": "1.0",
+  "options": [
+    {
+      "key": "cooldown",
+      "label": "Перезарядка кнопки, с (0 — как у заклинания в игре)",
+      "default": 8,
+      "min": 0,
+      "max": 60,
+      "step": 1
+    },
+    {
+      "key": "burst",
+      "label": "Залпов за нажатие",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "s2",
+      "label": "Огненный шар",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s5",
+      "label": "Ледяные иглы",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s7",
+      "label": "Молния",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s9",
+      "label": "Цунами",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s10",
+      "label": "Метеорит",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s12",
+      "label": "Вихрь",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s13",
+      "label": "Электрический удар",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s15",
+      "label": "Испепеление",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s16",
+      "label": "Энергетическая пуля",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s17",
+      "label": "Метель",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s18",
+      "label": "Таинственный луч",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s19",
+      "label": "Магический круг",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s20",
+      "label": "Лавовая область",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    },
+    {
+      "key": "s21",
+      "label": "Световая вспышка",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 1,
+      "hidden": true
+    }
+  ],
+  "depends": {
+    "modkit_spells": ">=1.0"
+  }
+}

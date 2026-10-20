@@ -1,0 +1,10 @@
+{
+  "id": "gamelog",
+  "name": "Журнал игры (отладка)",
+  "description": "Пишет в gamelog.txt все изменения значений и вызовы методов. Группы, исключения и папка (Download/ModKit или UserData) — кнопка «Настройки». Замедляет игру.",
+  "version": "2.0",
+  "author": "Pavel",
+  "main": "gamelog.dll",
+  "restartRequired": false,
+  "defaultEnabled": false
+}

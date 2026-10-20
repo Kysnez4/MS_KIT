@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="../../Mod.props" />
   <PropertyGroup><AssemblyName>class_menu</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_data"><HintPath>../modkit_data/bin/Release/net8.0/modkit_data.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_effects"><HintPath>../modkit_effects/bin/Release/net8.0/modkit_effects.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
 </Project>

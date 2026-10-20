@@ -1,0 +1,1 @@
+{ "id": "modkit_data", "name": "ModKit: данные игры", "description": "Библиотека: правка таблиц Z_Database, отложенный запуск, откат правок.", "version": "1.5", "library": true }

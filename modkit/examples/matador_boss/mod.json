@@ -1,0 +1,16 @@
+{
+  "id": "ext_matador_boss",
+  "name": "Матадор на боссе",
+  "description": "В начале волны босса играет MATADORA, в конце волны стихает.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "icon": "icon.png",
+  "screenshots": [],
+  "restartRequired": false,
+  "options": [
+    { "key": "volume", "label": "Громкость, %", "default": 100, "min": 10, "max": 100, "step": 10 },
+    { "key": "maxsec", "label": "Макс. длительность, с", "default": 150, "min": 30, "max": 600, "step": 30 },
+    { "key": "test", "label": "Тест при включении, с (0 = выкл)", "default": 0, "min": 0, "max": 30, "step": 5 }
+  ]
+}

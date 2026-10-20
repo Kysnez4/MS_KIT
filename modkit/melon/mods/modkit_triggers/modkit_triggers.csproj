@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>modkit_triggers</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_hero"><HintPath>../modkit_hero/bin/Release/net8.0/modkit_hero.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

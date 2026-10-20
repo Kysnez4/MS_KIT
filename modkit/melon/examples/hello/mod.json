@@ -1,0 +1,11 @@
+{
+  "id": "hello",
+  "name": "Привет",
+  "description": "Пример C#-мода: пишет в журнал начало боя и раз в N секунд.",
+  "version": "1.0",
+  "author": "Pavel",
+  "icon": "icon.png",
+  "screenshots": [
+    "icon.png"
+  ]
+}

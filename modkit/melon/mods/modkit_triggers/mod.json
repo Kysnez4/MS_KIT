@@ -1,0 +1,10 @@
+{
+  "id": "modkit_triggers",
+  "name": "ModKit: триггеры",
+  "description": "Библиотека: готовые условия событийных эффектов — каждые N убийств, урон по герою, малое HP, подбор маны.",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_hero": ">=1.0"
+  }
+}

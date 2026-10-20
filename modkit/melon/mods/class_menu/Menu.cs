@@ -49,7 +49,7 @@ namespace ClassMenu
                     customOrder = reg.All.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
                     int n = (int)ctx.Setting("sel");
                     selCustom = n >= 1 && n <= customOrder.Count ? customOrder[n - 1] : "";
-                    ctx.SetGlobalEffects(new (int, double)[0]);       // класс мода не складывается с классом игры, а подменяет его строку (Patch)
+                    ctx.Use<IEffects>("modkit_effects").SetGlobal(new (int, double)[0]);       // класс мода не складывается с классом игры, а подменяет его строку (Patch)
                     ctx.Log(selCustom == "" ? "класс мода не выбран" : $"класс мода «{reg.All[selCustom].Name}»: эффектов {reg.All[selCustom].Effects.Count}");
                 }
 

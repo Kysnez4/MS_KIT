@@ -3,5 +3,6 @@
   <PropertyGroup><AssemblyName>class_practice</AssemblyName></PropertyGroup>
   <ItemGroup>
     
+    <Reference Include="modkit_game"><HintPath>../modkit_game/bin/Release/net8.0/modkit_game.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

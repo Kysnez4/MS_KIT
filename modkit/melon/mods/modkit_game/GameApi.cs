@@ -53,6 +53,10 @@ namespace ModKit
         /// <summary>Итог последнего боя или null.</summary>
         BattleResult LastResult { get; }
         IPractice Practice { get; }
+        /// <summary>Добавляет артефакт в бой (List_ArtifactObtain) и пересчитывает характеристики. false — нет списка или менеджер неизвестен.</summary>
+        bool GrantArtifact(int id);
+        /// <summary>Убирает одну копию артефакта и пересчитывает характеристики.</summary>
+        bool RemoveArtifact(int id);
     }
 
     internal static class GameApi
@@ -155,6 +159,8 @@ namespace ModKit
             }
             public BattleResult LastResult => _last;
             public IPractice Practice => _p;
+            public bool GrantArtifact(int id) { try { Z_Database.List_ArtifactObtain.Add(id); Effects.Recalc(); return true; } catch { return false; } }
+            public bool RemoveArtifact(int id) { try { var ok = Z_Database.List_ArtifactObtain.Remove(id); if (ok) Effects.Recalc(); return ok; } catch { return false; } }
         }
 
         internal static IGame Instance() { EnsureHooks(); return new Game(); }

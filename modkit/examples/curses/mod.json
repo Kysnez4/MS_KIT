@@ -1,0 +1,11 @@
+{
+  "id": "curses",
+  "name": "Проклятия и дары",
+  "description": "Нажмите на заголовок «Исследование» (ДНК): плитки с даром и проклятием 1 к 2.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": false
+}

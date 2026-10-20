@@ -25,16 +25,16 @@ namespace ClassPractice
             },
             OnEnable = ctx =>
             {
-                // итог боя приходит из ядра (ctx.Game, событие BattleResult): время, число очков, которые игра выдала сама
+                // итог боя приходит из ядра (ctx.Use<IGame>("modkit_game"), событие BattleResult): время, число очков, которые игра выдала сама
                 ctx.Events.On<BattleResult>(r => ctx.Guard("практика после боя", () =>
                 {
                     int want = (int)Math.Min(ctx.Setting("limit"), Math.Floor(r.Time / (ctx.Setting("minutes") * 60)));
                     int extra = want - r.PracticeGainedTotal;
                     ctx.Log($"бой {r.Time:0} с: положено {want}, игра выдала {r.PracticeGainedTotal}, добавляю {Math.Max(0, extra)}");
                     if (extra <= 0) return;
-                    foreach (var id in ctx.Game.Practice.GrantRandom(extra)) ctx.Log($"+1 практика классу {id} (теперь {ctx.Game.Practice.Get(id)})");
+                    foreach (var id in ctx.Use<IGame>("modkit_game").Practice.GrantRandom(extra)) ctx.Log($"+1 практика классу {id} (теперь {ctx.Use<IGame>("modkit_game").Practice.Get(id)})");
                 }));
-                ctx.Game.ToString();   // обращение включает хук итога боя в ядре
+                ctx.Use<IGame>("modkit_game").ToString();   // обращение включает хук итога боя в ядре
             },
         };
     }

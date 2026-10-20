@@ -1,0 +1,11 @@
+{
+  "id": "modkit_companions",
+  "name": "ModKit: союзники",
+  "description": "Библиотека: союзники на двойниках героя (спрайт-копия, следует за героем, стреляет).",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_combat": ">=1.0",
+    "modkit_spells": ">=1.0"
+  }
+}

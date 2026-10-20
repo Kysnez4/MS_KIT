@@ -1,0 +1,2 @@
+{ "id": "fireball_cap", "name": "Проба: лимит огненных шаров", "description": "Тест Harmony на итераторе: режет число огненных шаров за залп на время MoveNext Play_Fireball, возвращает после.", "version": "1.0",
+  "options": [{ "key": "cap", "label": "Предел шаров", "default": 3, "min": 1, "max": 30, "step": 1 }] }

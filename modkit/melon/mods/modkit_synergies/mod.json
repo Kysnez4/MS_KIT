@@ -1,0 +1,10 @@
+{
+  "id": "modkit_synergies",
+  "name": "ModKit: синергии",
+  "description": "Библиотека: готовый рецепт для синергий (таблица Synergy + Array_SynergyObtain): новая синергия, состав.",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_data": ">=1.5"
+  }
+}

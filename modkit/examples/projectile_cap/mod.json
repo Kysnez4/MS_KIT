@@ -1,0 +1,31 @@
+{
+  "id": "projectile_cap",
+  "name": "Лимит снарядов",
+  "description": "У каждой магии свой предел числа снарядов; всё сверх предела превращается в урон и один стат магии (размер/область/пробитие).",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": false,
+  "options": [
+    { "key": "dmgScale", "label": "Бонус урона, % от таблицы", "default": 100, "min": 0, "max": 500, "step": 25 },
+    { "key": "statScale", "label": "Бонус стата, % от таблицы", "default": 100, "min": 0, "max": 500, "step": 25 },
+    { "key": "cap_bullet", "label": "Магическая пуля: предел", "default": 50, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_fireball", "label": "Огненный шар: предел", "default": 30, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_thunder", "label": "Молния: предел", "default": 30, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_tsunami", "label": "Цунами: предел", "default": 15, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_spirit", "label": "Дух: предел (с Валькирией ×2)", "default": 14, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_satellite", "label": "Спутник: предел (с кругом B ×2)", "default": 14, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_meteor", "label": "Метеорит: предел", "default": 30, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_tornado", "label": "Вихрь: предел", "default": 15, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_electric", "label": "Электрический удар: предел", "default": 20, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_incinerate", "label": "Испепеление: предел", "default": 20, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_energy", "label": "Энергетическая пуля: предел", "default": 30, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_blizzard", "label": "Метель: предел", "default": 20, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_arcane", "label": "Таинственный луч: предел", "default": 10, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_lava", "label": "Лавовая область: предел", "default": 15, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_flash", "label": "Световая вспышка: предел", "default": 20, "min": 1, "max": 200, "step": 1 },
+    { "key": "cap_shield", "label": "Щит: предел", "default": 10, "min": 1, "max": 200, "step": 1 }
+  ]
+}

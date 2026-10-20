@@ -1,0 +1,10 @@
+{
+  "id": "modkit_game",
+  "name": "ModKit: состояние игры",
+  "description": "Библиотека: класс, зона, время боя, артефакты, уровни заклинаний, практика классов; событие battleResult.",
+  "version": "1.0",
+  "library": true,
+  "depends": {
+    "modkit_effects": ">=1.0"
+  }
+}

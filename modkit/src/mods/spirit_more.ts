@@ -39,7 +39,13 @@ export default defineMod({
                 if (c && !c.isNull()) { hero = c; break; }
             }
             if (!hero) return;
-            const total = Math.round(hero.field<number>("UnitApply_SpiritNum").value);
+            // число духов складывается из артефактов и без самого заклинания «Дух» (ID 3): без заклинания духов не показываем
+            let learned = true;
+            try {
+                const l = ctx.cls("Z_Database").field<Il2Cpp.Object>("List_AllyMagicLevel").value;
+                if (!l.isNull() && l.field<number>("_size").value > 3) learned = Number(l.field<Il2Cpp.Array<number>>("_items").value.get(3)) > 0;
+            } catch (_) { /* список недоступен — считаем, что заклинание есть */ }
+            const total = learned ? Math.round(hero.field<number>("UnitApply_SpiritNum").value) : 0;
             const k = (ctx.settings.radius ?? 10) / 10;
             const mid = hero.field<Il2Cpp.Object>("List_ObjSpirit").value;
             const plus = hero.field<Il2Cpp.Object>("List_ObjSpirit_Plus").value;

@@ -1,0 +1,11 @@
+{
+  "id": "spirit_more",
+  "name": "Больше видимых духов",
+  "description": "Показывает вокруг героя столько духов, сколько их в характеристиках (до 28), а не только 5.",
+  "version": "1.0",
+  "author": "Pavel",
+  "main": "main.js",
+  "screenshots": [],
+  "restartRequired": false,
+  "defaultEnabled": false
+}

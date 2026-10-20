@@ -1,0 +1,20 @@
+using System.Runtime.CompilerServices;
+
+// Библиотеки ModKit (отдельные DLL из zip) видят внутренности ядра: Hooks, Raw, UiKit, Crash и т. п.
+[assembly: InternalsVisibleTo("modkit_data")]
+[assembly: InternalsVisibleTo("modkit_effects")]
+[assembly: InternalsVisibleTo("modkit_combat")]
+[assembly: InternalsVisibleTo("modkit_spells")]
+[assembly: InternalsVisibleTo("modkit_companions")]
+[assembly: InternalsVisibleTo("modkit_art")]
+[assembly: InternalsVisibleTo("modkit_game")]
+[assembly: InternalsVisibleTo("modkit_hero")]
+[assembly: InternalsVisibleTo("modkit_resources")]
+[assembly: InternalsVisibleTo("modkit_zones")]
+[assembly: InternalsVisibleTo("modkit_triggers")]
+[assembly: InternalsVisibleTo("modkit_research")]
+[assembly: InternalsVisibleTo("modkit_artifacts")]
+[assembly: InternalsVisibleTo("modkit_combos")]
+[assembly: InternalsVisibleTo("modkit_synergies")]
+[assembly: InternalsVisibleTo("modkit_spells_data")]
+[assembly: InternalsVisibleTo("class_menu")]

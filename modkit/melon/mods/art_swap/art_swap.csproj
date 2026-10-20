@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>art_swap</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="modkit_art"><HintPath>../modkit_art/bin/Release/net8.0/modkit_art.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

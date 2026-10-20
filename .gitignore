@@ -21,3 +21,8 @@ modkit/src/mods.gen.ts
 tools/frida-server-*
 tools/*.xz
 tools/frida-gadget-17*
+
+modkit/melon/**/bin/
+modkit/melon/**/obj/
+modkit/tools/**/bin/
+modkit/tools/**/obj/
