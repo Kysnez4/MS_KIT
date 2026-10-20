@@ -1,6 +1,6 @@
 # AGENTS.md — памятка для ИИ-агентов (Claude Code, Codex и др.)
 
-Репозиторий: загрузчик модов для Android-игры Magic Survival. Язык общения с владельцем — русский. Читай этот файл до правок; человеческое описание — в `README.md`.
+Репозиторий: загрузчик модов для Android-игры Magic Survival. Язык общения с владельцем — русский. Читай этот файл до правок; человеческое описание — в `README.md`. Правила для внешних участников (форки, Pull Request) — в `CONTRIBUTING.md`; лицензия кода — MIT.
 
 ## Карта репозитория
 - `modkit/melon/ModKit/` — ядро C# (MelonLoader). **Только** мод-менеджер: `Api.cs` (контракт), `Core.cs`, `Hooks.cs`, `Events.cs`, `External.cs` (zip-загрузка), `Registries.cs`, `BattleState.cs`, `MenuUi.cs`, `Ui*.cs`, `Extras.cs` (Timer/Store/Tags), `Screen.cs`. Игровой логики в ядре быть не должно.
@@ -21,7 +21,7 @@
 ```bash
 dotnet build -c Release modkit/melon/ModKit
 python modkit/melon/pack_mod.py <имена>          # библиотеки раньше потребителей
-bash modkit/tools/modkit_deploy.sh               # ядро на телефон (adb, пакет com.vkslrzm.Zombim)
+bash modkit/tools/modkit_deploy.sh               # ядро на телефон (adb); пакет в скрипте P=com.vkslrzm.Zombim — отладочная сборка, основная — com.vkslrzm.Zombix
 python modkit/tools/autotest.py --mods <ids> --duration 120   # бой на телефоне, исходы PASS/FAIL/CRASH
 ```
 - Проверяй игру **по журналам и `ctx.Screen`**, не по скриншотам и слепым тапам. Журнал: `/sdcard/MelonLoader/<пакет>/UserData/ModKit/modkit.log`.

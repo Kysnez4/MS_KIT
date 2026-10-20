@@ -77,6 +77,10 @@ Frida-версия: `npm install`, `npm run build`, `python modkit\build_standal
 
 Для ИИ-агентов есть отдельная памятка: [AGENTS.md](AGENTS.md).
 
+## Участие и лицензия
+
+Проект открыт: код под лицензией [MIT](LICENSE). Форкайте репозиторий, предлагайте идеи для ядра и библиотек через Pull Request. Правила, сборка и проверка — в [CONTRIBUTING.md](CONTRIBUTING.md); идеи и ошибки — в [Issues](https://github.com/Kysnez4/MS_KIT/issues). Игра *Magic Survival*, MelonLoader, Harmony и другие внешние компоненты остаются под лицензиями своих авторов.
+
 ## Благодарности и ИИ
 
 Загрузчик: [MelonLoader](https://github.com/LavaGang/MelonLoader) / LemonLoader, Il2CppInterop, Harmony; старая версия: frida-gadget. Большая часть кода написана с помощью ИИ-агентов (Claude Code), результат проверяется сборкой и запуском на телефоне. Проект неофициальный, не связан с разработчиками игры; играть с модами в сетевых режимах не стоит.
