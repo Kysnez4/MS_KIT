@@ -29,3 +29,6 @@
 
 ### Благодарности и ИИ
 Загрузчик: LemonLoader / MelonLoader, Il2CppInterop, Harmony. Рефакторинг и перенос выполнены с помощью Claude Code (Claude Sonnet 5.5); код проверен сборкой и прогоном на устройстве.
+
+## Zombix на MelonLoader (2026-10-20)
+Сборка игры с MelonLoader (LemonLoader) как отдельное приложение `com.vkslrzm.Zombix` (ставится рядом с оригиналом, свои сохранения). `PKG=com.vkslrzm.Zombix bash modkit/tools/melon_build.sh` (`BUILD_ONLY=1` — без установки на телефон). Проверено на устройстве: первый запуск генерирует сборки IL2CPP (несколько минут), затем ModKit загружает 28 zip без ошибок. Ядро и моды лежат отдельным архивом `Zombix-melon-ModKit.zip` (папки `Mods` и `UserData` — в `/sdcard/MelonLoader/com.vkslrzm.Zombix/`).
