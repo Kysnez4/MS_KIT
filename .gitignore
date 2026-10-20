@@ -26,3 +26,4 @@ modkit/melon/**/bin/
 modkit/melon/**/obj/
 modkit/tools/**/bin/
 modkit/tools/**/obj/
+modkit/docs/ROADMAP.md

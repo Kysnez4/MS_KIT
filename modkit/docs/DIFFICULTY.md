@@ -115,7 +115,7 @@
 | 13 | Эффекты героя «против врагов» | эффекты 54 (HP), 55 (скорость), 33 (размер), 84 | `SetGlobalEffects`/`OnHeroPass` | да (путь, проверенный в «Проклятиях и дарах») | единственный метод, обновляемый и при `AbilityStatApply`; значения в % и ограничены игрой |
 | 14 | Хард-режим | `Game_AreaLevel` = 1 | меню до `Button_AreaStart` | зависит | игровая сложность «Хард»: другое название зоны, декор, награды; формулы не разобраны |
 
-**Что НЕ делать:** не писать в `Array_AbilityClassPractice`, `Array_AreaBestScoreNum`, `Array_JournalProgress`, золото/самоцветы/исследования (сохраняемые массивы и ObscuredInt с контрольной суммой, MELONLOADER.md/ROADMAP §2); не хукать `Unit_Damage`/`Update` врагов (сотни экземпляров × кадр); не менять `UnitApply_*` у живых врагов в `Update`.
+**Что НЕ делать:** не писать в `Array_AbilityClassPractice`, `Array_AreaBestScoreNum`, `Array_JournalProgress`, золото/самоцветы/исследования (сохраняемые массивы и ObscuredInt с контрольной суммой, MELONLOADER.md); не хукать `Unit_Damage`/`Update` врагов (сотни экземпляров × кадр); не менять `UnitApply_*` у живых врагов в `Update`.
 
 ## 8. Anti-cheat и сохранение [П]
 
