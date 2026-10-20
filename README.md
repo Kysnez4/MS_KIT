@@ -36,11 +36,16 @@
 
 | Документ | О чём |
 |---|---|
-| [Журнал изменений ModKit](modkit/melon/CHANGELOG.md) | что нового в версии 2.0 |
-| [API ModKit (C#)](modkit/docs/API.md) | как устроен мод, события, ядро и 16 библиотек, `ctx.Use<T>` |
-| [Установка MelonLoader](modkit/docs/MELONLOADER.md) | сборка APK, заливка, журналы, грабли |
-| [Руководство по Frida-версии](modkit/docs/README.md) | TypeScript-моды, формат zip |
-| [Каталог артефактов](modkit/docs/CATALOG.md), [таблицы](modkit/docs/TABLES.md), [эффекты](modkit/docs/EFFECTS.md), [условные эффекты](modkit/docs/CONDITIONAL.md) | данные игры |
+| [Оглавление](modkit/docs/README.md) | порядок чтения |
+| [Первый мод](modkit/docs/GETTING_STARTED.md) | подготовка, сборка, упаковка, установка |
+| [Формат мода](modkit/docs/MOD_FORMAT.md) | `mod.json`, настройки, зависимости, библиотеки, жизненный цикл |
+| [API ядра](modkit/docs/API.md) | `ModContext`, хуки, события, окна |
+| [Библиотеки](modkit/docs/LIBRARIES.md) | 16 библиотек `modkit_*` |
+| [Рецепты](modkit/docs/COOKBOOK.md) | готовый код (собирается: `modkit/melon/examples/cookbook`) |
+| [Отладка](modkit/docs/DEBUGGING.md) | журналы, автотест, вылеты |
+| [Журнал изменений](modkit/melon/CHANGELOG.md) | что нового в 2.0 |
+| [Данные игры](modkit/docs/CATALOG.md) | каталог, [таблицы](modkit/docs/TABLES.md), [эффекты](modkit/docs/EFFECTS.md), [условные эффекты](modkit/docs/CONDITIONAL.md) |
+| [Старая Frida-версия](modkit/docs/FRIDA.md) | TypeScript-моды |
 
 Минимальный мод на C#:
 

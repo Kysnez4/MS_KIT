@@ -1,150 +1,113 @@
-# ModKit API (C#, MelonLoader): справочник и инструкции
+# Справочник ядра ModKit (`ModKit.dll`)
 
-Единая точка для авторов модов. Ядро: `modkit/melon/ModKit` (`ModKit.dll`), моды: `modkit/melon/mods/*` (zip). Всё ниже собрано из кода; пометка **[не проверено]** — на устройстве не запускалось.
+Ядро — «мод-менеджер»: контракт мода, хуки, события, таймеры, хранилище, окна, зависимости. Всё, что знает устройство игры (враги, заклинания, эффекты, таблицы), живёт в библиотеках: [LIBRARIES.md](LIBRARIES.md). Все типы лежат в `namespace ModKit`. Пометка ✅ — проверено на устройстве, ◻ — собрано, в игре не проверялось.
 
-## 1. Как устроен мод
+## 1. `ModContext` (параметр `ctx`)
 
+| Член | Что делает |
+|---|---|
+| `Id` | id мода |
+| `Settings`, `Setting(key)`, `SetSetting(key, v)` | настройки мода (см. [MOD_FORMAT.md](MOD_FORMAT.md) §3) |
+| `Log(msg)`, `Warn(msg)`, `Error(msg)` | журнал (`[id] …`), предупреждение в карточке, ошибка с подсчётом |
+| `Guard(what, fn)` | выполнить под защитой, исключение → журнал, серия ошибок отключает мод |
+| `Mark(what)` | метка для журнала вылетов (дёшево, можно в горячем коде) |
+| `Events` | подписка и рассылка событий, §3 |
+| `Expose(api)`, `Mod<T>(id)` | отдать свой API другим модам / взять чужой (`null`, если мода нет или он выключен) |
+| `Use<T>(libraryId)` | API библиотеки для этого мода (расширение): `ctx.Use<ICombat>("modkit_combat")` |
+| `CleanupList()` | список `Action`, которые выполнятся при выключении мода (расширение, для библиотек) |
+| `Before/After/Replace(класс, метод, число_параметров, fn)` | хуки на методы игры, §2 |
+| `Every(ms, fn)` | периодический вызов на главном потоке (реальное время) |
+| `OnCleanup(fn)` | выполнить при выключении мода |
+| `Registry<T>(name)` | общий реестр между модами, §5 |
+| `Timer` | таймеры по игровому времени, §4 |
+| `Store` | постоянное хранилище мода (JSON), §4 |
+| `Tags` | общие теги заклинаний, артефактов, врагов, §4 |
+| `Screen` | где игра и что на экране, §7 |
+| `Toast(текст, сек)` | подпись на экране по игровому времени |
+| `ReadAsset(путь)` | байты файла из zip мода или `null` |
+
+Всё, что регистрируется через `ctx`, снимается при выключении мода.
+
+## 2. Хуки на методы игры
 ```csharp
-public class MyMod : IKitMod {
-    public ModDef Define() => new ModDef {
-        Id = "my_mod", Name = "…", Version = "1.0",              // версию поднимать при каждой правке: загрузчик обновляет по ней
-        Options = { new ModOption { Key = "n", Label = "…", Default = 1, Min = 0, Max = 9 } },
-        OnEnable = ctx => { /* хуки, события, таймеры; всё снимается при выключении */ },
-    };
-}
+ctx.After("C_Battle_Manager", "Start", 0, (self, args) => { /* после */ });
+ctx.Before("C_Battle_AllyUnit", "Unit_Damage", 3, (self, args) => { /* до */ });
+ctx.Replace("Класс", "Метод", 1, (self, args) => результат);   // оригинал не вызывается; для void результат игнорируется
 ```
-Сборка и заливка: `dotnet build -c Release` в папке мода → `python modkit/melon/pack_mod.py <id>` → zip в `/sdcard/Download/ModKit/`. Ядро (`ModKit.dll`) заливает `bash modkit/tools/modkit_deploy.sh`.
-Ссылку на `Il2CppACTk.Runtime` моду добавлять не нужно, пока он не читает `ObscuredInt/Float` сам (для этого есть `IGame` из `modkit_game`).
+- Класс — имя из `Assembly-CSharp` или `"Сборка:Класс"`; третий аргумент — число параметров (выбирает перегрузку). `self` — Il2Cpp-обёртка `this`, `args` — аргументы (приводите через `Convert.ToDouble`, `(int)`…).
+- Ставится один Harmony-патч на метод; хуки разных модов работают вместе. `Replace` может занять метод только один мод (иначе `ModConflictException`).
+- Недоступно: хуки *внутри* функции (по инструкциям) и IL-трансформеры: методы игры — нативный код.
+- Не вешайте тяжёлые хуки на `Update` и `Unit_Damage` врагов: сотни экземпляров за кадр. Хук дольше 8 мс пишется в журнал как «медленный».
+- Имена классов и методов ищите в `dump.cs` или декомпиляции: [DECOMP.md](DECOMP.md).
 
-## 1а. Ядро и библиотеки (Factorio-style)
+## 3. События
 
-Ядро (`ModKit.dll`) — только «мод-менеджер»: контракт мода, `config.json`, зависимости, хуки, события, реестры, zip-загрузка, окно «Моды», UI-примитивы, `ctx.Timer/Store/Tags/Screen/Toast`, `BattleState` (бой идёт / пауза). Всё, что знает устройство игры, живёт в библиотеках-модах (`library: true`): они включаются сами, когда включён мод, который от них зависит.
-
-```csharp
-// mod.json: "depends": { "modkit_combat": ">=1.0", "modkit_spells": ">=1.0" }
-var enemies = ctx.Use<IEnemies>("modkit_combat");     // один объект на мод, пока он включён
-var spells  = ctx.Use<ISpells>("modkit_spells");
-```
-`ctx.Use<T>(id)` = `ctx.Mod<ILibrary<T>>(id).For(ctx)`: библиотека привязывает хуки, таймеры и правки к вызывающему моду, поэтому всё откатывается при выключении именно этого мода. В `csproj` нужна ссылка на DLL библиотеки (`Mod.props` даёт ядро; пример — `mods/combat_probe`).
-
-| Библиотека | Что даёт (`ctx.Use<T>`) | Зависит от |
-|---|---|---|
-| `modkit_data` | `IData`: `WhenReady`, `Table`, `Edit`, `Add`, `AddToList`; `Table`, `Effect`, `Commands`, `Sprites` | — |
-| `modkit_artifacts` | `IArtifacts`: `Add/AddMany/Edit/Remove/Restore`, `ArtifactDef` | data, art |
-| `modkit_combos` | `ICombos`: `Add/AddMany/Edit`, `ComboDef` | data |
-| `modkit_synergies` | `ISynergies`: `Add/AddMany/Remove/AddArtifact/RemoveArtifact`, `SynergyDef` | data |
-| `modkit_spells_data` | `ISpellsData`: `Get/Edit/Scale`, `SpellInfo`, `SpellChanges` | data |
-| `modkit_effects` | `IEffects`: `Define`, `SetGlobal`, `UseBuiltin`, `OnHeroPass`, `Recalc`; `EffectDef`, `IHeroView` | data |
-| `modkit_spells` | `ISpells` (уровни, авто-каст, `AddActive`), `view.Spell(id, SpellStat)` | effects |
-| `modkit_combat` | `IEnemies` и `ICombat` (обе через `modkit_combat`) | effects |
-| `modkit_companions` | `ICompanions` | combat, spells |
-| `modkit_zones` | `IZones` | combat |
-| `modkit_hero` | `IHero` | — |
-| `modkit_triggers` | `ITriggers` | hero |
-| `modkit_resources` | `IResources.Create(имя, max, regen)` → `IResource` | — |
-| `modkit_research` | `IResearch` | — |
-| `modkit_game` | `IGame` (+ событие `battleResult`) | effects |
-| `modkit_art` | `IArt` (и `ArtIcons`) | — |
-
-Были в ядре, убраны: `ctx.Game/Enemies/Combat/Spells/Hero/Companions/Triggers/Research/Zones/Art/Resource(...)`, `ctx.DefineEffect/SetGlobalEffects/UseBuiltinEffects/OnHeroPass/RecalcStats`, `ModKitData.Data.For(ctx)`. Убраны совсем: `IData.AddClass/SelectClass` и `ClassDef` (ломали меню классов; свои классы — `CustomClass` из `class_menu`). `CustomClass` теперь в сборке `class_menu` (потребителю нужны ссылка на неё и `depends: class_menu`). Ниже в справочнике `IGame`, `IEnemies` и т. д. — интерфейсы этих библиотек; остальные имена из таблиц (`Alive`, `Damage`, …) не менялись.
-Загрузчик грузит zip в порядке зависимостей (библиотеки первыми), поэтому библиотеки могут ссылаться друг на друга.
-
-## 2. События (теги)
-
-Подписка: `ctx.Events.On("имя", o => …)` (payload — `EventData`) или `ctx.Events.On<T>(t => …)` (типизированное). Свои: `ctx.Events.Emit("мой_мод:событие", данные)`.
+Подписка: `ctx.Events.On("имя", o => …)` (`o` — `EventData`, словарь с `Get<T>(ключ)`) или типизированная `ctx.Events.On<T>(t => …)`. Рассылка: `ctx.Events.Emit("мой_мод:событие", данные)` / `Emit<T>(объект)`. Подписки снимаются при выключении мода. Хуки событий ставятся при первой подписке и снимаются, когда подписчиков не осталось.
 
 | Событие | Когда | Данные |
 |---|---|---|
-| `mainMenu` | построено главное меню | `menu` |
-| `battleStart` | после `C_Battle_Manager.Start` | `manager` |
-| `battleEnd` | **до** `End_Battle` | `manager` |
-| **`battleResult`** / тип `BattleResult` | **после** `End_Battle` (новое) | `Time`, `Kills`, `AreaId`, `AreaLevel`, `ClassId`, `PracticeGained[24]`, `PracticeGainedTotal` |
-| `areaChange` | `Start_AreaChange` (только путь «Обелиск», не обычная смена подзон) | `manager` |
-| `enemySpawn` / `enemyDeath` | `Start_Unit` / `Unit_Death` | `enemy` |
+| `mainMenu` ✅ | построено главное меню | `menu` |
+| `battleStart` ✅ | после `C_Battle_Manager.Start` | `manager` |
+| `battleEnd` | до `End_Battle` | `manager` |
+| `battleResult` / тип `BattleResult` ◻ | после `End_Battle` (нужна `modkit_game`) | `Time`, `Kills`, `AreaId`, `AreaLevel`, `ClassId`, `PracticeGained[24]` |
+| `areaChange` | `Start_AreaChange` (путь «Обелиск»; обычная смена подзон — нет) | `manager` |
+| `enemySpawn` | `Start_Unit` | `enemy` |
+| `enemyDeath` ✅ | `Unit_Death` | `enemy`, `unitId` |
 | `bossSpawn` | `Create_UnitEnemyBoss` | `manager`, `unitId`, `count` |
-| `modEnabled` / `modDisabled` | включение/выключение мода | `id` |
+| `heroDamaged` ✅ | `Unit_Damage` героя | `amount` |
+| `manaPickup` ✅ | `ManaGain` | `amount` |
+| `itemPickup` ✅ | `Obtain_Item` | `type` (`ObtainItemType`), `objType`: 1 — шарики, 3 — руны и бонусы, 4 — сундук (вероятно) |
+| `modEnabled` / `modDisabled` | мод включён / выключен | `id` |
 | `RegistryChanged` (тип) | изменение общего реестра | `Registry`, `Id`, `Owner`, `Added` |
 
-## 3. `IGame` — состояние игры (новое, [не проверено])
+Свои события называйте с префиксом мода (`my_mod:событие`). Типы для событий между модами объявляйте в библиотеке.
 
-| Член | Что |
+## 4. Время, хранилище, теги
+
+**`ctx.Timer` (`IGameTimer`)**: `Now` (игровое время с запуска мода), `Delta`, `After(сек, fn)`, `Every(сек, fn)`. Время идёт только в бою и стоит на паузе; в отличие от `ctx.Every` (реальное время).
+
+**`ctx.Store` (`IStore`)**: `Get<T>(key, def)`, `Set<T>(key, value)`, `Has`, `Remove`. JSON в `UserData/ModKit/store/<id>.json`; значения — числа, строки, bool, списки и объекты, понятные `System.Text.Json`. Пишется сразу при `Set`.
+
+**`ctx.Tags` (`ITags`)**: `Set(kind, id, теги…)`, `Of(kind, id)`, `With(kind, тег)`; `kind` — `"spell"`, `"artifact"`, `"enemy"` или свой. Общие для всех модов, не сохраняются.
+
+**`BattleState`** (статический): `InBattle`, `Paused`, `Hero`, `HeroKnown` — идёт ли бой сейчас, нет ли паузы, герой текущего боя.
+
+## 5. Реестры и API между модами
+- `ctx.Registry<T>("имя")` → `IRegistry<T>`: `Register(id, value)`, `Unregister(id)`, `TryGet`, `All`. Реестр общий для всех модов; записи мода убираются при его выключении; `T` — общий тип (из библиотеки или ядра). Пример: `class_menu` собирает свои классы из реестра `classes` (`CustomClass`).
+- `ctx.Expose(объект)` / `ctx.Mod<T>("id")` — разовый API мода без модели библиотек. Для API «на мод» используйте `ILibrary<T>` и `ctx.Use` ([MOD_FORMAT.md](MOD_FORMAT.md) §5).
+
+## 6. Окна и интерфейс (`UiKit`)
+
+Экран логический: ширина `UiKit.LogicalW` = 720, высота `UiKit.ScreenH`, координаты от левого верхнего угла. Всё строится на Unity uGUI.
+
+| Метод | Что |
 |---|---|
-| `ClassId` | `Game_BattleClassID` (выбранный класс игры) |
-| `AreaId`, `AreaLevel`, `AreaMax` | зона 1..14, сложность (0/1 «Хард»), число открытых зон |
-| `SurvivalTime`, `Kills` | время (с) и убийства текущего боя |
-| `Artifacts` | список `{Id, Count}` из `List_ArtifactObtain` |
-| `SpellLevels` | `{ID заклинания → уровень}` из `List_AllyMagicLevel`, только > 0 |
-| `LastResult` | итог последнего боя (`BattleResult`) |
-| `Practice` | практика классов: `Max` (46), `Get(id)`, `Add(id, n)`, `Candidates()`, `GrantRandom(n)` |
+| `OpenPage(name, title, subtitle[, onClose])` → `(go, rt, top)` | полноэкранное окно с заголовком и кнопкой закрытия; повторное открытие с тем же `name` заменяет окно |
+| `Label(parent, text, x, y, w, h, size, align)`, `Tint(text, цвет)` | надпись |
+| `AddButton(parent, text, x, y, w, h, size, цвет[r,g,b,a], onClick)` | кнопка |
+| `AddNumberField(parent, значение, x, y, w, h, size, десятичное, onCommit)` | поле ввода числа |
+| `AddScroll(parent, x, y, w, h)`, `SetContentHeight` | прокручиваемая область |
+| `OpenChecklist(ChecklistOptions)`, `OpenNumberForm(NumberFormOptions)` | готовые окна: список флажков и форма чисел (пример: `auto_artifact`, `spell_tuner`) |
+| `AddPanView(...)`, `OpenPanWindow(...)`, `PanOptions`, `PanNode` | карта с прокруткой и узлами (дерево достижений, `achievements`) ◻ |
+| `AddPager(...)`, `PagerOptions` | листатель страниц ◻ |
+| `AddHudLabel`, `AddHudBar`, `AddHudButton(name, text, x, y, w, h, size, цвет, onClick)` | подпись, полоса и кнопка поверх экрана боя, без перехвата касаний |
+| `Picture(parent, png, x, y, w, h)`, `SetImageOverlay(image, png)` | своя картинка |
+| `GameSprite(поле Z_Database, индекс)`, `GetSprite/SetSprite` | спрайты игры через указатели (обёртка `Sprite` роняет Mono) |
 
-Практика сохраняется при ближайшем автосохранении игры; окно награды игры изменений мода не показывает.
+Окно настроек мода: задайте `OpenSettings` в `ModDef`. Свои элементы в главное меню: `OnMainMenu`.
 
-## 4. Остальные возможности ядра
+## 7. Экран и боты (`ctx.Screen`) ✅
 
-| Область | API |
-|---|---|
-| Хуки | `ctx.Before/After/Replace(класс, метод, число_параметров, fn)`; хуки внутри функции недоступны |
-| Периодика | `ctx.Every(мс, fn)` (главный поток) |
-| Герой | `IEffects.OnHeroPass(view => …)`, `IEffects.Define`, `IEffects.SetGlobal` (эффекты подставляются при пересчёте, `docs/EFFECTS.md`) |
-| Заклинания | `ISpells`: `Level`, `CanCast`, `SetAuto`, `Cast`, `Cooldown`, `AddActive` (кнопка активного каста) |
-| Данные игры | `new Table("Class")`: `Get/Set/CloneRow/IndexOf`; библиотека `modkit_data` (`Edit/Add/AddToList`, откат при выключении) |
-| Реестры | `ctx.Registry<T>("classes")` — общие данные между модами (классы `CustomClass`) |
-| Интерфейс | `UiKit` (окна, кнопки, `PanView` — карта с прокруткой, `Pager`), `OnMainMenu`, `OpenSettings` |
-| Диагностика | `ctx.Log/Warn/Error/Guard/Mark`; журнал `UserData/ModKit/modkit.log`, `gamelog.txt` |
+`Name` (`mainMenu`, `battle`, `paused`, `spellSelect`, `artifactSelect`, `dead`, `loading`), `Size`, `Buttons()`, `Texts()` (с координатами экрана), `FindButton(текст)`, `Click(кнопка или текст)`. Нужен для автотестов без скриншотов ([DEBUGGING.md](DEBUGGING.md)).
 
-## 4а. Бой: враги и действия (новое, собрано, **[не проверено]** на устройстве)
+## 8. Низкий уровень
+- `Raw` — прямые вызовы IL2CPP по указателям (`Class`, `Method`, `Invoke`, `UnboxInt`…) там, где обёртка Il2CppInterop роняет Mono: `UnityEngine.Texture`, `Sprite`.
+- `Hooks` — те же хуки без `ctx` (`AddBefore`, `AddAfter`, `AddReplace`, `FindType`, `FindMethod`); для библиотек.
+- Поля и методы игры доступны как обычные C#-члены `Il2Cpp.*` из `Assembly-CSharp` (`Z_Database`, `C_Battle_AllyUnit` …).
 
-| Член | Что |
-|---|---|
-| `IEnemies` | `Alive`, `Near(x, y, r)` (ближайшие первыми), `Nearest(x, y)`, `HeroPos`. Список ведут хуки `Start_Unit`/`Unit_Death`, обхода кучи нет. `IEnemy`: `Id`, `Hp`, `Pos`, `Alive`, `Raw` |
-| `ICombat` | `Damage(e, amount, magicId, criRan, criMult)` → `Unit_Damage`; `Freeze`, `Stun` → `Status_Freeze/Stun`; `Pull(e, x, y, dist)` — разовый сдвиг; `Shoot(bulletId, x, y, z, ratio)` → `Bullet_Create` героя |
-| `IEffects.Recalc()` | `AbilityStatApply(2)` сразу; false, если менеджер ещё не пойман (нужен хотя бы один пересчёт в бою) |
-
-Что проверить первым на устройстве: растёт ли `Alive.Count` в бою и не остаются ли в нём мёртвые (пул врагов переиспользуется); наносит ли `Damage` урон и показывает ли число; не тянет ли `Pull` врага сквозь стены.
-
-Новое в ядре (собрано; **проверено на устройстве** только `Enemies.Alive/Nearest/HeroPos`, `Combat.Damage`, события `manaPickup`/`enemyDeath`, `Store`, `Resource` с полосой — по `combat_probe`; остальное **не проверено**):
-
-| Член | Что |
-|---|---|
-| `IHero` | `Hp`, `HpMax`, `Heal(n)`, `Shield`/`AddShield(n)` (щит возвращает потерянное здоровье после `Unit_Damage`) |
-| `IResources.Create(имя, max, regen)` | свой ресурс («Надежда»): `Value`, `TrySpend`, `Add`, `ShowBar(подпись, x, y, w, h, цвет)`; заполняется на `battleStart`; полоса видна только в бою |
-| `ctx.Timer` | `After`/`Every(сек)` по игровому времени (на паузе стоит) |
-| `IZones` | `Create(x, y, r, длит., тик, onTick(враги))` |
-| `ctx.Store` | постоянный JSON мода: `Get/Set/Has/Remove` (`UserData/ModKit/store/<id>.json`) |
-| **`IArt`** | `SetIcon(id, png)` / `ClearIcon(id)`: своя иконка артефакта везде сразу (энциклопедия, выбор, торговец, описание в бою). Родной спрайт лежит в сжатом атласе, поэтому поверх `Image` кладётся `RawImage`: хук `V_Artifact_Manager.Show_ArtifactDetail` (по ID) + обход активных `Image` каждые 150 мс (по указателю спрайта; у клонов спрайт копируется `Object.Instantiate`). Пример: мод `art_swap` (`icons/<ID>.png` в zip) |
-| `ctx.Tags` | теги `Set/Of/With` на заклинаниях, артефактах, врагах |
-| `IGame.GrantArtifact/RemoveArtifact` | правка `List_ArtifactObtain` + пересчёт |
-| События | `heroDamaged`(`amount`), `manaPickup`(`amount`), `itemPickup`(`cellId`), `enemyDeath` теперь с `unitId` |
-| `UiKit.AddHudLabel/AddHudBar` | подпись и полоса на экране без перехвата касаний |
-| **`ctx.Screen`** | где игра: `Name` (`mainMenu`/`battle`/`paused`/`spellSelect`/`artifactSelect`/`dead`/`loading`), `Buttons()` и `Texts()` с координатами в пикселях экрана (как у `adb input tap`), `FindButton`, `Click(текст/кнопка)` |
-
-Ещё добавлено (**проверено на устройстве** по `api_probe` и `combat_probe`, кроме отмеченного):
-
-| Член | Что |
-|---|---|
-| `ITriggers` | `OnKills(N, fn)`, `OnHeroDamaged(fn)`, `OnLowHp(доля, пауза, fn)`, `OnManaPickups(N, fn)`; счётчики сбрасываются на `battleStart` |
-| `IResearch` | `Define(id, цена, требования…)`, `AddPoints`, `Unlocked`, `CanUnlock`, `Unlock`; прогресс в `ctx.Store`, событие `research:unlocked` |
-| `ctx.Toast(текст, сек)` | подпись на экране по игровому времени |
-| `ctx.ReadAsset(путь)` | байты файла из zip мода |
-| `view.Spell(id, SpellStat.Damage/Num/Cooldown/Area/Size)` | поле заклинания героя в `OnHeroPass` |
-| `ActiveSpellDef.Row` | второй ряд кнопок активных заклинаний (**не проверено**) |
-| Профилировщик хуков | хук дольше 8 мс пишется в журнал как «медленный хук» (до 30 строк) |
-
-`itemPickup` теперь хук `C_Battle_Item.Obtain_Item` (EventData: `type` = `ObtainItemType`, `objType` = `Type_ObjItem`) — **проверено**: `objType=1` — шарики (type 1–3), `objType=3` — руны/бонусы (type 15, 21, 34; руна защиты — вероятно 34, подобрана последней), `objType=4` — type 18 (вероятно сундук). Не сделано: `Companions`, изменение результата в хуках (`Replace` остаётся единственным способом), декларативные моды (`content.json`).
-
-
-## 5. Ограничения (чтобы не наступать повторно)
-
-- `GameObject.Find` недоступен (ICall не резолвится): искать через `FindObjectsOfType(Il2CppType.Of<Transform>())`.
-- `ObscuredInt/Float` читать через `GetDecrypted()`; писать только через обёртку игры, не по смещению. Сохраняемые массивы с контрольной суммой не править (`Array_JournalProgress`, `Array_AreaBestScoreNum`, [58]/[59] в практике).
-- Класс игры задаёт `Start_Ability` один раз (запись `90000+класс`); подмена `Game_BattleClassID` позже не работает — подменять строку таблицы `Class` (мод `class_menu`).
-- Слоты эффектов класса: 1..7 (слот 7 — мастерство, практика ≥46), 8 и 9 игра у школ не читает (`CLASS_MENU.md`).
-- Практика за бой: только в ветке «новый журнал»; `class_practice` добирает её сам (`PRACTICE.md`).
-
-## 6. Планы (не сделано)
-
-Событие «награда» с заменой значения до окна наград (нужен хук внутри `End_Battle`, недоступен); список артефактов с названиями из таблицы; теги предметов/эффектов в таблицах; единая подписка на «выбор класса».
-
-## 7. Эмулятор (проверка без телефона)
-
-Пробовали Android-эмулятор из SDK (AVD `Pixel_5`, x86_64 + трансляция arm64, API 37.2): `emulator -avd Pixel_5 -no-snapshot -gpu swiftshader_indirect`. Игра (патченый `D:\tools\lemon\out\base.apk`, пакет `com.vkslrzm.Zombim`) **запускается**, но MelonLoader не стартует: нет `UserData/ModKit`, журнала нет. Вероятная причина — нативные хуки LemonLoader/Il2CppInterop не работают под трансляцией ARM [не проверено]. Для проверки модов пока нужен телефон. Голый `qemu-system-aarch64` без образа Android не подходит (образа нет).
+## 9. Ограничения
+- `GameObject.Find` недоступен: ищите через `FindObjectsOfType(Il2CppType.Of<T>())`.
+- `ObscuredInt/Float` читать через `GetDecrypted()`; писать только через обёртку игры. Сохраняемые массивы с контрольной суммой не править (`Array_JournalProgress`, `Array_AreaBestScoreNum`, практика классов).
+- Класс игры задаёт `Start_Ability` один раз; подмена `Game_BattleClassID` позже не работает. Свои классы: мод `class_menu` + `CustomClass`.
+- Слоты эффектов класса 1..7 (слот 7 — мастерство), 8–9 игра у школ не читает.
+- Покупки в клонах игры не работают.

@@ -1,0 +1,21 @@
+{
+  "id": "cookbook",
+  "name": "Книга рецептов",
+  "description": "Компилируемые примеры из docs/COOKBOOK.md. Каждый рецепт — отдельный метод; в игре включается настройкой recipe.",
+  "version": "1.0",
+  "depends": {
+    "modkit_data": ">=1.5",
+    "modkit_effects": ">=1.0",
+    "modkit_artifacts": ">=1.0",
+    "modkit_spells": ">=1.0",
+    "modkit_combat": ">=1.0",
+    "modkit_companions": ">=1.0",
+    "modkit_hero": ">=1.0",
+    "modkit_triggers": ">=1.0",
+    "modkit_resources": ">=1.0",
+    "modkit_game": ">=1.0"
+  },
+  "options": [
+    { "key": "recipe", "label": "Рецепт (1..12, 0 — выключено)", "default": 0, "min": 0, "max": 12, "step": 1 }
+  ]
+}

@@ -7,7 +7,7 @@
 - `modkit/melon/mods/modkit_*` — 16 библиотек (`library: true`): data, artifacts, combos, synergies, spells_data, effects, spells, combat, companions, zones, hero, triggers, resources, research, game, art. Граф зависимостей: `modkit/docs/API.md`, раздел 1а.
 - `modkit/melon/mods/*`, `modkit/melon/examples/*` — моды и примеры. `pack_mod.py` собирает zip.
 - `modkit/src`, `modkit/build*.py`, `modkit/out` — старая Frida-версия (TypeScript).
-- `modkit/docs/` — документация; `modkit/tools/` — деплой, автотест, сборка APK, Ghidra.
+- `modkit/docs/` — документация для авторов модов (оглавление `modkit/docs/README.md`: GETTING_STARTED, MOD_FORMAT, API, LIBRARIES, COOKBOOK, DEBUGGING). При изменении API обновляй эти файлы; примеры кода из COOKBOOK живут в `modkit/melon/examples/cookbook` и должны собираться. `modkit/tools/` — деплой, автотест, сборка APK, Ghidra.
 - `modkit/decomp`, `modkit/tools/ghidra/*.tsv` — **локальные** результаты декомпиляции игры, в git не добавлять (публичный репозиторий, чужой код).
 
 ## Главные правила API
