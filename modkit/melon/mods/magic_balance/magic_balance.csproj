@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>magic_balance</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="balance.json" LogicalName="balance.json" />
+    <Reference Include="modkit_data"><HintPath>../modkit_data/bin/Release/net8.0/modkit_data.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_spells_data"><HintPath>../modkit_spells_data/bin/Release/net8.0/modkit_spells_data.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="modkit_combos"><HintPath>../modkit_combos/bin/Release/net8.0/modkit_combos.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

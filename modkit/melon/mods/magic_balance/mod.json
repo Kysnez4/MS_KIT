@@ -1,0 +1,11 @@
+{
+  "id": "magic_balance",
+  "name": "Баланс магии",
+  "description": "Правки заклинаний, их атрибутов и комбинаций из файла balance.json сайта modkit/tools/balance.",
+  "version": "1.4",
+  "depends": {
+    "modkit_data": ">=1.5",
+    "modkit_spells_data": ">=1.0",
+    "modkit_combos": ">=1.0"
+  }
+}
