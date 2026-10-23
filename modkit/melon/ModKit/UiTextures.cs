@@ -153,6 +153,62 @@ namespace ModKit
             Raw.Invoke(_setSprite, img.Pointer, sprite);
         }
 
+        // ---------------------------------------------------------------- Sprite.Create (только с полной libunity: UNITY_LIB=full)
+
+        private static readonly Dictionary<string, IntPtr> SpriteCache = new Dictionary<string, IntPtr>();
+        private static IntPtr _createSprite, _spriteHide;
+        private static bool _createSpriteTried;
+
+        /// <summary>
+        /// Есть ли в движке Sprite.Create. В родной libunity игры он вырезан; есть в APK, собранном с UNITY_LIB=full (melon_build.sh).
+        /// </summary>
+        public static bool CanCreateSprite
+        {
+            get
+            {
+                if (!_createSpriteTried)
+                {
+                    _createSpriteTried = true;
+                    _createSprite = Il2CppInterop.Runtime.IL2CPP.il2cpp_resolve_icall("UnityEngine.Sprite::CreateSprite_Injected");
+                    if (_createSprite == IntPtr.Zero) Log.Write("Sprite.Create недоступен: libunity без него (нужна сборка UNITY_LIB=full)");
+                    else _spriteHide = Raw.Method(Raw.Class("UnityEngine.CoreModule.dll", "UnityEngine", "Sprite"), "set_hideFlags", 1);
+                }
+                return _createSprite != IntPtr.Zero;
+            }
+        }
+
+        /// <summary>
+        /// Спрайт из PNG/JPG мода — указатель (не оборачивать в Sprite из Il2CppInterop). Вставлять в Image (SetSprite),
+        /// SpriteRenderer.set_sprite и массивы SpriteList_*. Область (x, y, w, h) в пикселях от левого нижнего угла; w = 0 — вся картинка
+        /// (так из одного атласа-PNG режутся кадры). pivot — доля от размера области. Zero — нет Sprite.Create или картинка не загрузилась.
+        /// Кэшируется по картинке и параметрам; пересоздаётся, если игра его выгрузила.
+        /// </summary>
+        public static unsafe IntPtr CreateSprite(byte[] image, float pixelsPerUnit = 100f, int x = 0, int y = 0, int w = 0, int h = 0,
+                                                 float pivotX = 0.5f, float pivotY = 0.5f)
+        {
+            if (image == null || !CanCreateSprite) return IntPtr.Zero;
+            var tex = TextureOf(image);
+            if (tex == null) return IntPtr.Zero;
+            if (w <= 0) { x = 0; y = 0; w = tex.W; h = tex.H; }
+            var key = $"{image.GetHashCode()}|{tex.Ptr}|{pixelsPerUnit}|{x},{y},{w},{h}|{pivotX},{pivotY}";
+            if (SpriteCache.TryGetValue(key, out var old) && !Raw.IsDestroyed(old)) return old;
+
+            float* rect = stackalloc float[4] { x, y, w, h };
+            float* pivot = stackalloc float[2] { pivotX, pivotY };
+            float* border = stackalloc float[4];
+            // CreateSprite_Injected(Texture2D, ref Rect, ref Vector2 pivot, float ppu, uint extrude, SpriteMeshType, ref Vector4 border,
+            //                       bool generateFallbackPhysicsShape, SecondarySpriteTexture[]); FullRect = 0 — без построения сетки по альфе
+            var create = (delegate* unmanaged<IntPtr, float*, float*, float, uint, int, float*, byte, IntPtr, IntPtr>)_createSprite;
+            IntPtr sp;
+            try { sp = create(tex.Ptr, rect, pivot, pixelsPerUnit, 0, 0, border, 0, IntPtr.Zero); }
+            catch (Exception e) { Log.Write("Sprite.Create: " + e.Message); return IntPtr.Zero; }
+            if (sp == IntPtr.Zero) return IntPtr.Zero;
+            Raw.InvokeInt(_spriteHide, sp, 61);                  // HideAndDontSave, как у текстуры
+            Raw.Pin(sp);
+            SpriteCache[key] = sp;
+            return sp;
+        }
+
         private static IntPtr _getSprite, _setSprite;
         private static void InitImage()
         {

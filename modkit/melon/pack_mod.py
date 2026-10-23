@@ -1,6 +1,7 @@
 """Собирает C#-мод из modkit/melon/mods/<имя> (или examples/<имя>) в zip: mod.json + <имя>.dll.
 Запуск: python modkit/melon/pack_mod.py <имя> [...]   Результат: <имя>.zip рядом с папкой мода.
-mod.json берётся из папки мода (id, name, description, version, depends, options...); поле main ставится само."""
+mod.json берётся из папки мода (id, name, description, version, depends, options...); поле main ставится само.
+Папка sprites/ с PNG превращается в sprites.bundle (sprite_bundle.py, нужны UnityPy и Pillow); в моде — UiKit.LoadSpriteBundle."""
 import json, os, subprocess, sys, zipfile
 
 base = os.path.dirname(os.path.abspath(__file__))
@@ -26,4 +27,10 @@ for name in sys.argv[1:]:
                 for f in fs:
                     full = os.path.join(dp, f)
                     z.write(full, os.path.relpath(full, d).replace(os.sep, '/'))
+        spr = os.path.join(d, 'sprites')
+        if os.path.isdir(spr):                         # PNG → бандл спрайтов по шаблону (Sprite.Create в игре вырезан)
+            import sprite_bundle
+            tmp = os.path.join(d, 'bin', 'sprites.bundle')
+            sprite_bundle.from_dir(spr, tmp, float(meta.get('spritePpu', 100)))
+            z.write(tmp, 'sprites.bundle')
     print('->', out)

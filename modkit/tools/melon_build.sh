@@ -10,11 +10,16 @@ ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"; SER=08990372A3000411
 
 python "$ROOT/modkit/tools/build_melon_base.py" | tail -1
 # libunity: UNITY_LIB=orig (по умолчанию) — родная библиотека игры (f3); UNITY_LIB=lemon — сборка LemonLoader для f1 с подправленной
-# строкой версии (с ней игра падает: Scudo «invalid chunk state», сборки f1 и f3 различаются по коду)
+# строкой версии (с ней игра падает: Scudo «invalid chunk state», сборки f1 и f3 различаются по коду); UNITY_LIB=full — полная
+# Release-библиотека f3 без вырезания движка (deps\libunity_f3_full.so.arm64-v8a из Android Build Support 2022.3.62f3,
+# Variations/il2cpp/Release/Libs/arm64-v8a; UNITY_LIB=dev — Development): в ней есть Sprite.Create, НО игра с ней падает —
+# движок вызывает вырезанные из игры C#-методы NativeInputSystem (см. docs/MELONLOADER.md)
 UNITY_LIB="${UNITY_LIB:-orig}" python - <<'EOF'
 import os, zipfile
 if os.environ['UNITY_LIB'] == 'orig':
     d = zipfile.ZipFile(r'D:\Projects\frida\modkit\out\config.arm64_v8a-612.apk').read('lib/arm64-v8a/libunity.so')
+elif os.environ['UNITY_LIB'] in ('full', 'dev'):
+    d = open(r'D:\tools\lemon\deps\libunity_f3_%s.so.arm64-v8a' % os.environ['UNITY_LIB'], 'rb').read()
 else:
     d = open(r'D:\tools\lemon\deps\libunity.so.arm64-v8a', 'rb').read()
     d = d.replace(b'2022.3.62f1', b'2022.3.62f3').replace(b'4af31df58517', b'96770f904ca7')

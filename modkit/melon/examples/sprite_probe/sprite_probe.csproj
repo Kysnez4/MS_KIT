@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>sprite_probe</AssemblyName><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+</Project>
