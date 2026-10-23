@@ -1,7 +1,8 @@
 """Собирает C#-мод из modkit/melon/mods/<имя> (или examples/<имя>) в zip: mod.json + <имя>.dll.
 Запуск: python modkit/melon/pack_mod.py <имя> [...]   Результат: <имя>.zip рядом с папкой мода.
 mod.json берётся из папки мода (id, name, description, version, depends, options...); поле main ставится само.
-Папка sprites/ с PNG превращается в sprites.bundle (sprite_bundle.py, нужны UnityPy и Pillow); в моде — UiKit.LoadSpriteBundle."""
+Папка sprites/ с PNG превращается в sprites.bundle (sprite_bundle.py, нужны UnityPy и Pillow); в моде — UiKit.LoadSpriteBundle.
+Файл font.ttf/font.otf превращается в font.bundle (font_bundle.py, нужен UnityPy); пример загрузки — mods/custom_font."""
 import json, os, subprocess, sys, zipfile
 
 base = os.path.dirname(os.path.abspath(__file__))
@@ -33,4 +34,10 @@ for name in sys.argv[1:]:
             tmp = os.path.join(d, 'bin', 'sprites.bundle')
             sprite_bundle.from_dir(spr, tmp, float(meta.get('spritePpu', 100)))
             z.write(tmp, 'sprites.bundle')
+        fnt = next((os.path.join(d, f) for f in ('font.ttf', 'font.otf') if os.path.exists(os.path.join(d, f))), None)
+        if fnt:                                        # TTF → бандл шрифта по шаблону (загрузка TTF в игре вырезана)
+            import font_bundle
+            tmp = os.path.join(d, 'bin', 'font.bundle')
+            font_bundle.build(fnt, tmp)
+            z.write(tmp, 'font.bundle')
     print('->', out)

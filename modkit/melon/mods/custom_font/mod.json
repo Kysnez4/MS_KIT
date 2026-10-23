@@ -1,0 +1,7 @@
+{
+  "id": "custom_font",
+  "name": "Шрифт Tagesschrift",
+  "description": "Заменяет все шрифты игры на Tagesschrift Cyrillic (font.ttf из архива). Работает без перезапуска.",
+  "version": "1.0",
+  "author": "Pavel"
+}
