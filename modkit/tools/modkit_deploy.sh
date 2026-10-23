@@ -3,7 +3,7 @@
 # Запуск (Git Bash):  bash modkit/tools/modkit_deploy.sh [секунд_ожидания]
 set -e
 export MSYS_NO_PATHCONV=1
-ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"; P=com.vkslrzm.Zombim; M=/sdcard/MelonLoader/$P
+ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"; P=${P:-com.vkslrzm.Zombim}; M=/sdcard/MelonLoader/$P
 cd "$(dirname "$0")/../melon/ModKit"
 dotnet build -c Release 2>&1 | grep -E "error|Ошибок" | sort -u
 $ADB shell am force-stop $P

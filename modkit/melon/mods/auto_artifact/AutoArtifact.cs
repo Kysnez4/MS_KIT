@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Il2Cpp;
 using ModKit;
+using ModKitData;
 
 namespace AutoArtifact
 {
@@ -13,6 +14,8 @@ namespace AutoArtifact
     public class AutoArtifactMod : IKitMod
     {
         private const int Slots = 8;
+        // по умолчанию — синергия 33 «Гильгамеш»: Богатство, Ковчег Завета, Корона, Золотая рулетка, Монета
+        private static readonly int[] Gilgamesh = { 75, 176, 177, 198, 218 };
         private static string IdKey(int i) => i == 0 ? "id" : $"id{i + 1}";
         private static string CntKey(int i) => $"cnt{i + 1}";
 
@@ -23,7 +26,7 @@ namespace AutoArtifact
                 Id = "auto_artifact",
                 Name = "Артефакт на старте боя",
                 Description = "Сразу выдаёт выбранные артефакты (ID и количество — в «Настройки») в начале боя.",
-                Version = "2.0",
+                Version = "2.2",
                 OnEnable = OnEnable,
                 OpenSettings = ctx => UiKit.OpenNumberForm(new UiKit.NumberFormOptions
                 {
@@ -45,7 +48,7 @@ namespace AutoArtifact
                 }),
             };
             for (int i = 0; i < Slots; i++)
-                def.Options.Add(new ModOption { Key = IdKey(i), Label = $"ID артефакта {i + 1}", Default = i == 0 ? 210 : 0, Min = 0, Max = 9999, Step = 1, Hidden = true });
+                def.Options.Add(new ModOption { Key = IdKey(i), Label = $"ID артефакта {i + 1}", Default = i < Gilgamesh.Length ? Gilgamesh[i] : 0, Min = 0, Max = 9999, Step = 1, Hidden = true });
             for (int i = 0; i < Slots; i++)
                 def.Options.Add(new ModOption { Key = CntKey(i), Label = $"Количество {i + 1}", Default = 1, Min = 0, Max = 99, Step = 1, Hidden = true });
             return def;
@@ -96,7 +99,7 @@ namespace AutoArtifact
         private void OnEnable(ModContext ctx)
         {
             bool pending = false;
-            int warm = 0, tick = 0, stage = 0, logged = 0;
+            int warm = 0, tick = 0, poolTick = 0, stage = 0, logged = 0;
             double trimUntil = 0;
             var obtained = Z_Database.List_ArtifactObtain;
 
@@ -127,6 +130,16 @@ namespace AutoArtifact
                 }
             }
 
+            // убирает выданные ID из пулов сундуков и торговца (List_ArtifactPossibleGrade_*, List_ArtifactDrop)
+            void RemoveFromChests(List<int> ids)
+            {
+                foreach (var id in ids.Distinct())
+                {
+                    var was = Commands.TakeFromPools(id);
+                    if (was.Count > 0) ctx.Log($"артефакт {id} убран из сундуков ({string.Join(", ", was.Select(w => $"{w.pool}×{w.n}"))})");
+                }
+            }
+
             // игра зовёт AbilityStatApply при старте героя: если артефактов ещё нет, просим выдать наш
             ctx.After("V_Ability_Manager", "AbilityStatApply", 1, (self, args) =>
             {
@@ -146,6 +159,8 @@ namespace AutoArtifact
                     if (stage == 0 && !pending && ++warm == 120) { pending = true; ctx.Log("AbilityStatApply не было — выдаю по таймеру"); }
                     // при возврате в идущий бой игра сама восстанавливает список (с нашими артефактами) — убираем лишние копии
                     if (stage == 1 && Scheduler.Now < trimUntil && ++tick % 30 == 0) TrimExtra(ids);
+                    // выданные артефакты не должны снова выпадать из сундуков: игра может пересобрать пулы, поэтому чистим раз в ~0,5 с
+                    if (stage == 1 && ++poolTick % 30 == 0) RemoveFromChests(ids);
                     if (!pending) return;
                     pending = false;
                     if (ids.Count == 0) return;                                // все ID = 0: ничего не выдаём
@@ -159,6 +174,7 @@ namespace AutoArtifact
                     trimUntil = Scheduler.Now + 15;
                     if (given.Count == 0) { ctx.Log("артефакты уже в списке (возврат в бой) — повторно не выдаю"); return; }
                     SyncSynergies(ctx, list);
+                    RemoveFromChests(ids);
                     ctx.Log($"выданы артефакты {string.Join(", ", given)}");
                 }
                 catch (Exception e) { ctx.Log("ошибка: " + e); }

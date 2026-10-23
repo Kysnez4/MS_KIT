@@ -14,6 +14,7 @@ namespace MagicBalance
     ///   spells[id].lv — эффекты уровней → слоты Ability 2..9 (сопоставление уровней и слотов как в gen_data.py);
     ///   spells[id].attrs — эффекты атрибутов (строки Ability с ID из поля game);
     ///   combos[id] — эффекты, имя и требования комбинаций (MagicCom); newCombos — новые комбинации.
+    ///   artifacts[id] / synergies[id] — полный список эффектов строки Ability / Synergy и (необязательно) lines/colors описания.
     /// У атрибута и комбинации необязательные lines (строки описания 효과 설명줄01..06, до 6) и colors (цвет строк «#RRGGBB»):
     /// если они есть, описание переписывается, чтобы числа совпадали с новыми эффектами.
     /// Поля hero и pick — только калькулятор сайта, в игру не идут.
@@ -26,14 +27,15 @@ namespace MagicBalance
 
         public ModDef Define() => new ModDef
         {
-            Id = "magic_balance", Name = "Баланс магии", Version = "1.4",
-            Description = "Правки заклинаний, их атрибутов и комбинаций из файла balance.json сайта modkit/tools/balance.",
-            Depends = { ["modkit_data"] = ">=1.5", ["modkit_spells_data"] = ">=1.0", ["modkit_combos"] = ">=1.0" },
+            Id = "magic_balance", Name = "Баланс магии", Version = "1.7",
+            Description = "Правки заклинаний, их атрибутов и комбинаций из файла balance.json сайта modkit/tools/balance. Механики артефактов: ДНК без снижения, взрыв боссов Девой/Графиней, проклятие Экскалибура, руна неуязвимости Гильгамеша.",
+            Depends = { ["modkit_data"] = ">=1.5", ["modkit_spells_data"] = ">=1.0", ["modkit_combos"] = ">=1.0", ["modkit_effects"] = ">=1.0" },
             // при каждом входе в главное меню правки проверяются заново: если игра перечитала таблицы, отличия снова записываются (иначе ничего не меняется)
             OnMainMenu = (ctx, menu) => ctx.Guard("повторное применение баланса", () => Apply(ctx, ctx.Use<IData>("modkit_data"))),
             OnEnable = ctx =>
             {
                 var data = ctx.Use<IData>("modkit_data");
+                Mechanics.Enable(ctx);
                 Done.Clear();
                 ctx.OnCleanup(Done.Clear);
                 data.WhenReady(() => ctx.Guard("применение баланса", () => Apply(ctx, data)));
@@ -115,7 +117,12 @@ namespace MagicBalance
                 if (Has(root, "newCombos", out var added))
                     foreach (var c in added.EnumerateArray()) if (AddCombo(ctx, lib, c)) nc++;
             }
-            if (sp + at + cb + nc > 0) ctx.Log($"баланс применён: заклинаний {sp}, атрибутов {at}, комбинаций изменено {cb}, добавлено {nc}");
+            int ar = 0, sy = 0;
+            if (Has(root, "artifacts", out var arts))
+                foreach (var p in arts.EnumerateObject()) if (EditRow(ctx, data, "Ability", 9, int.Parse(p.Name), p.Value)) ar++;
+            if (Has(root, "synergies", out var syns))
+                foreach (var p in syns.EnumerateObject()) if (EditRow(ctx, data, "Synergy", 3, int.Parse(p.Name), p.Value)) sy++;
+            if (sp + at + cb + nc + ar + sy > 0) ctx.Log($"баланс применён: заклинаний {sp}, атрибутов {at}, комбинаций изменено {cb}, добавлено {nc}, артефактов {ar}, синергий {sy}");
         }
 
         // ------------------------------------------------------------ заклинания
@@ -279,6 +286,33 @@ namespace MagicBalance
             if (any) lib.Edit(id, ch);
             if (colors.Count > 0) data.Edit("MagicCom", id, colors);
             ctx.Log($"комбинация {id} «{t.Get(row, "이름")}»: {Fx(cur)} → {(ch.Effects != null ? Fx(ch.Effects) : "эффекты прежние")}" + (ch.Name != null ? $", имя «{ch.Name}»" : "") + (ch.Lines != null ? ", описание: " + string.Join(" / ", ch.Lines) : ""));
+            return true;
+        }
+
+        // ------------------------------------------------------------ артефакты и синергии
+
+        /// <summary>Строка Ability (артефакт) или Synergy: effects — полный список эффектов (слоты 1..slots по порядку, лишние пустые), lines/colors — описание.</summary>
+        private static bool EditRow(ModContext ctx, IData data, string table, int slots, int id, JsonElement o)
+        {
+            var t = data.Table(table);
+            int row = t.IndexOf(id, t.IdColumn);
+            if (row < 0) { ctx.Warn($"{table} {id}: нет строки"); return false; }
+            var cols = new HashSet<string>(t.Columns());
+            var cur = new List<Effect>();
+            for (int n = 1; n <= slots; n++) { int eid = (int)t.Num(row, C(n)); if (eid > 1) cur.Add(new Effect(eid, t.Num(row, C(n, "값")))); }
+            var ch = new Dictionary<string, object>();
+            var want = Has(o, "effects", out var fx) ? Effects(fx) : null;
+            if (want != null && Fx(want) != Fx(cur))
+            {
+                if (want.Count > slots) { ctx.Warn($"{table} {id}: эффектов больше {slots}"); return false; }
+                for (int n = 1; n <= slots; n++) { ch[C(n)] = n <= want.Count ? want[n - 1].Id : 1; ch[C(n, "값")] = n <= want.Count ? want[n - 1].Value : 0; }
+            }
+            var text = Text(o, out var lines);
+            foreach (var kv in text)
+                if (cols.Contains(kv.Key) && !Equals(t.Get(row, kv.Key) as string, kv.Value as string)) ch[kv.Key] = kv.Value;
+            if (ch.Count == 0) return false;
+            data.Edit(table, id, ch);
+            ctx.Log($"{table} {id} «{t.Get(row, "이름")}»: {Fx(cur)} → {(want != null ? Fx(want) : "эффекты прежние")}" + (lines != null ? ", описание: " + string.Join(" / ", lines) : ""));
             return true;
         }
 

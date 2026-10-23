@@ -16,7 +16,7 @@ import argparse, json, os, re, subprocess, sys, tempfile, time
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 ADB = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Android', 'Sdk', 'platform-tools', 'adb.exe')
-PKG = 'com.vkslrzm.Zombim'
+PKG = os.environ.get('PKG', 'com.vkslrzm.Zombim')   # основная сборка: PKG=com.vkslrzm.Zombix
 BASE = f'/sdcard/MelonLoader/{PKG}'
 K = f'{BASE}/UserData/ModKit'
 HERE = os.path.dirname(os.path.abspath(__file__))
