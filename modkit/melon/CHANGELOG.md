@@ -1,5 +1,12 @@
 # ModKit (MelonLoader): журнал изменений
 
+## Спрайты из бандла (2026-10-23)
+- `UiKit.LoadSpriteBundle`: спрайты мода из AssetBundle со сценой. `pack_mod.py` превращает папку `sprites/` с PNG в `sprites.bundle` (`sprite_bundle.py`, UnityPy): шаблон `melon/sprite_template.bundle` на 256 слотов собран один раз в Unity 2022.3.62f3 (`tools/unity_sprite_template/BuildTemplate.cs`), в слоты подставляются картинки, размеры и имена. В игре бандл грузится `AssetBundle.LoadFromFileAsync`, сцена догружается поверх, спрайты берутся у объектов `mk_<имя>`. Проверено на телефоне (Zombix, `examples/sprite_probe`): 2 спрайта, размеры 64×64 и 64×32 совпали с PNG; на экран спрайты не выводились.
+
+## Sprite.Create (2026-10-23)
+- В родной `libunity.so` игры вырезан движок (Strip Engine Code): 1048 icall из 7557, `Sprite.Create` нет ни в C#, ни в нативной части. `melon_build.sh` получил `UNITY_LIB=full`/`dev` — полная Release/Development-библиотека 2022.3.62f3 из Android Build Support (`Variations/il2cpp/*/Libs/arm64-v8a`), в ней все icall.
+- `UiKit.CreateSprite` / `UiKit.CanCreateSprite`: спрайт из PNG/JPG мода через icall `Sprite::CreateSprite_Injected`. Проверено на телефоне: с полной `libunity` игра падает (и без MelonLoader) — движок вызывает вырезанные из игры C#-методы `NativeInputSystem`. С родной `libunity` `CreateSprite` возвращает `IntPtr.Zero`.
+
 ## Мод magic_balance 1.3 (2026-10-22)
 - Правки проверяются заново при каждом входе в главное меню (`OnMainMenu`): если игра перечитала таблицы, отличия записываются снова. `scale`/`add` и новые комбинации повторно не применяются.
 - Диагностика: при открытии карточки комбинации в энциклопедии в журнал пишутся её эффекты и текст.

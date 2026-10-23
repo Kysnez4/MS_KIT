@@ -93,6 +93,8 @@ ctx.Replace("Класс", "Метод", 1, (self, args) => результат); 
 | `AddHudLabel`, `AddHudBar`, `AddHudButton(name, text, x, y, w, h, size, цвет, onClick)` | подпись, полоса и кнопка поверх экрана боя, без перехвата касаний |
 | `Picture(parent, png, x, y, w, h)`, `SetImageOverlay(image, png)` | своя картинка |
 | `GameSprite(поле Z_Database, индекс)`, `GetSprite/SetSprite` | спрайты игры через указатели (обёртка `Sprite` роняет Mono) |
+| `LoadSpriteBundle(key, bytes, onDone)` | свои спрайты из PNG ✅: папка `sprites/` мода → `sprites.bundle` (собирает `pack_mod.py`), в моде `UiKit.LoadSpriteBundle("id", ctx.ReadAsset("sprites.bundle"), d => …)`; `d[имя файла без .png]` — указатель на спрайт для `SetSprite`, `SpriteRenderer.set_sprite`, `SpriteList_*`. Опорная точка — центр, `spritePpu` в `mod.json` (по умолчанию 100), до 256 спрайтов на мод |
+| `CreateSprite(…)`, `CanCreateSprite` | `Sprite.Create` — в движке игры вырезан, возвращает `IntPtr.Zero` (оставлено на случай другой `libunity`, см. `MELONLOADER.md`) |
 
 Окно настроек мода: задайте `OpenSettings` в `ModDef`. Свои элементы в главное меню: `OnMainMenu`.
 
