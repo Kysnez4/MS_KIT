@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Mod.props" />
+  <PropertyGroup><AssemblyName>enemy_unlock</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(Ref)\il2cpp\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
