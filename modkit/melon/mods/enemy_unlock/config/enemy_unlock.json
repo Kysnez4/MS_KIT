@@ -2,6 +2,5 @@
   "colliderOn": true,
   "removeAbilities": [10, 11],
   "keepAbilities": { "41": [11], "42": [11], "43": [11], "44": [11], "45": [11], "46": [11] },
-  "debuffResistance": { "40": 75 },
-  "logIds": [40, 41, 42, 43, 44, 45, 46]
+  "debuffResistance": { "40": 75 }
 }

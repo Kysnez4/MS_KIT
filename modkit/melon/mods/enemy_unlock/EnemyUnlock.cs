@@ -13,7 +13,7 @@ namespace EnemyUnlock
     ///   removeAbilities — особенности, которые убрать всем (10 — иммунитет к эффекту 100182, 11 — «босс»: иммунитет к уничтожению);
     ///   keepAbilities — ID врага → особенности, которые ему оставить (по умолчанию 11 боссам 41–46);
     ///   debuffResistance — ID врага → сопротивление дебаффам; коэффициенты стана/заморозки пересчитываются по формуле Start_Unit;
-    ///   logIds — какие враги писать в журнал (плюс первые 5 появившихся).
+    /// Врагов в журнал не пишет: толпы Слуг давали сотни строк в секунду, запись журнала на /sdcard грузила телефон.
     /// HP боссов, уже умноженное в Start_Unit по особенности 11, остаётся.
     /// </summary>
     public class EnemyUnlockMod : IKitMod
@@ -23,7 +23,7 @@ namespace EnemyUnlock
             Id = "enemy_unlock",
             Name = "Уязвимые враги",
             Description = "Коллайдеры, особенности и сопротивление врагов из файла UserData/ModKit/enemy_unlock.json.",
-            Version = "1.3",
+            Version = "1.5",
             OnEnable = Enable,
         };
 
@@ -33,7 +33,6 @@ namespace EnemyUnlock
             public List<int> removeAbilities { get; set; } = new List<int>();
             public Dictionary<string, List<int>> keepAbilities { get; set; } = new Dictionary<string, List<int>>();
             public Dictionary<string, float> debuffResistance { get; set; } = new Dictionary<string, float>();
-            public List<int> logIds { get; set; } = new List<int>();
         }
 
         private static void Enable(ModContext ctx)
@@ -44,28 +43,20 @@ namespace EnemyUnlock
             foreach (var kv in cfg.keepAbilities) if (int.TryParse(kv.Key, out var id)) keep[id] = new HashSet<int>(kv.Value);
             var res = new Dictionary<int, float>();
             foreach (var kv in cfg.debuffResistance) if (int.TryParse(kv.Key, out var id)) res[id] = kv.Value;
-            var logIds = new HashSet<int>(cfg.logIds);
             ctx.Log($"настройки: коллайдер {(cfg.colliderOn ? "вкл" : "выкл")}, убрать [{string.Join(", ", cfg.removeAbilities)}], оставить у {keep.Count} врагов, сопротивление у {res.Count}");
 
-            int n = 0;
             ctx.After("C_Battle_EnemyUnit", "Start_Unit", 3, (self, args) =>
             {
                 var e = (C_Battle_EnemyUnit)self;
                 var list = e.List_UnitSpecialEffect;
-                var removed = new List<int>();
                 if (list != null)
                     foreach (var a in cfg.removeAbilities)
                     {
                         if (keep.TryGetValue(e.UnitID, out var k) && k.Contains(a)) continue;
-                        bool hit = false;
-                        while (list.Remove(a)) hit = true;
-                        if (hit) removed.Add(a);
+                        while (list.Remove(a)) { }
                     }
                 if (cfg.colliderOn && e.BoxCollider_ObjUnit != null) e.BoxCollider_ObjUnit.enabled = true;
-                bool r = res.TryGetValue(e.UnitID, out var value);
-                if (r) SetDebuffResistance(e, value);
-                if (n++ < 5 || logIds.Contains(e.UnitID))
-                    ctx.Log($"враг {e.UnitID}: убраны [{string.Join(", ", removed)}]" + (r ? $", сопротивление {value} (стан ×{e.UnitApply_StunResistance:0.##})" : ""));
+                if (res.TryGetValue(e.UnitID, out var value)) SetDebuffResistance(e, value);
             });
         }
 

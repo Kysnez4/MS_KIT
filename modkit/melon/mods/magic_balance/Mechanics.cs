@@ -20,15 +20,16 @@ namespace MagicBalance
         private const int BossFlag = 11;      // особенность врага: «не взрывается при смерти» (у всех боссов)
         private const int NoRune = 9999999;   // так игра пишет «условия нет»
 
-        private static int _obelisks, _greedCond;
+        private const int GreedKills = 2500;  // порог синергии 33 (эффект 733) — запасной, если игра не дала нормального значения
+        private static int _obelisks, _greedCond, _greedBase;
         private static C_Battle_AllyUnit _hero;
 
         public static void Enable(ModContext ctx)
         {
             var fx = ctx.Use<IEffects>("modkit_effects");
-            _obelisks = 0; _greedCond = 0; _hero = null;
+            _obelisks = 0; _greedCond = 0; _greedBase = 0; _hero = null;
 
-            ctx.Events.On("battleStart", e => { _obelisks = 0; _greedCond = 0; _hero = null; });
+            ctx.Events.On("battleStart", e => { _obelisks = 0; _greedCond = 0; _greedBase = 0; _hero = null; });
             ctx.Events.On("areaChange", e =>
             {
                 _obelisks++;
@@ -52,8 +53,11 @@ namespace MagicBalance
             {
                 _hero = v.Raw;
                 var cond = v.Field("ApplyRuneObtainKillCondition");
-                // только при собранной синергии: у порога есть и другие источники (в начале боя был 10000)
-                _greedCond = Gilgamesh() && cond.Value > 0 && cond.Value < NoRune ? (int)cond.Value : 0;
+                // только при собранной синергии: у порога есть и другие источники (в начале боя был 10000).
+                // Игра иногда пересчитывает порог от уже подменённого значения (5000 − 9999999 = −9994999): такие значения
+                // не берём, порог помним с последнего нормального пересчёта, иначе срабатывала бы обычная руна жадности.
+                if (cond.Value > 0 && cond.Value < NoRune) _greedBase = (int)cond.Value;
+                _greedCond = Gilgamesh() ? (_greedBase > 0 ? _greedBase : GreedKills) : 0;
                 if (_greedCond > 0) cond.Value = NoRune;
                 if (Has(Dna) && _obelisks > 0)
                 {
@@ -83,13 +87,11 @@ namespace MagicBalance
             {
                 // ветка Графини: внутри бросок Девы — 75% HP, иначе 30%
                 u.Unit_DetonateDead_Elite();
-                ctx.Log($"взрыв босса {u.UnitID} (Графиня): {u.DetonateDead_Damage:0}");
             }
             else if (C_Battle_AllyUnit.UnitApply_DetonateDeadRan > 0 && UnityEngine.Random.Range(1, 101) <= C_Battle_AllyUnit.UnitApply_DetonateDeadRan)
             {
                 u.DetonateDead_Damage = u.UnitApply_HpMax * C_Battle_AllyUnit.UnitApply_DetonateDeadDamageRatioNum;
                 u.Unit_DetonateDead();
-                ctx.Log($"взрыв босса {u.UnitID} (Дева): {u.DetonateDead_Damage:0}");
             }
         }
     }

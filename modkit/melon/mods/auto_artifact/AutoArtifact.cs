@@ -26,7 +26,7 @@ namespace AutoArtifact
                 Id = "auto_artifact",
                 Name = "Артефакт на старте боя",
                 Description = "Сразу выдаёт выбранные артефакты (ID и количество — в «Настройки») в начале боя.",
-                Version = "2.2",
+                Version = "2.3",
                 OnEnable = OnEnable,
                 OpenSettings = ctx => UiKit.OpenNumberForm(new UiKit.NumberFormOptions
                 {
@@ -99,7 +99,7 @@ namespace AutoArtifact
         private void OnEnable(ModContext ctx)
         {
             bool pending = false;
-            int warm = 0, tick = 0, poolTick = 0, stage = 0, logged = 0;
+            int warm = 0, tick = 0, poolTick = 0, stage = 0, logged = 0, frame = 0;
             double trimUntil = 0;
             var obtained = Z_Database.List_ArtifactObtain;
 
@@ -147,20 +147,21 @@ namespace AutoArtifact
                 if (logged++ < 5) ctx.Log($"AbilityStatApply (stage={stage})");
             });
 
-            // каждый кадр боя: новый бой — список опять пуст, можно выдавать снова
+            // раз в 10 кадров боя (каждый кадр давал подлагивания до 50 мс): новый бой — список опять пуст, можно выдавать снова
             ctx.Before("C_Battle_Manager", "Update", 0, (self, args) =>
             {
+                if (!pending && ++frame % 10 != 0) return;
                 try
                 {
                     var ids = WantedIds();
                     var list = Z_Database.List_ArtifactObtain;
                     if (stage == 1 && list.Count < ids.Count) { stage = 0; warm = 0; }     // новый бой: список снова короткий
                     // AbilityStatApply мог быть вызван до включения мода — тогда ждём ~2 с боя и выдаём сами
-                    if (stage == 0 && !pending && ++warm == 120) { pending = true; ctx.Log("AbilityStatApply не было — выдаю по таймеру"); }
+                    if (stage == 0 && !pending && ++warm == 12) { pending = true; ctx.Log("AbilityStatApply не было — выдаю по таймеру"); }
                     // при возврате в идущий бой игра сама восстанавливает список (с нашими артефактами) — убираем лишние копии
-                    if (stage == 1 && Scheduler.Now < trimUntil && ++tick % 30 == 0) TrimExtra(ids);
-                    // выданные артефакты не должны снова выпадать из сундуков: игра может пересобрать пулы, поэтому чистим раз в ~0,5 с
-                    if (stage == 1 && ++poolTick % 30 == 0) RemoveFromChests(ids);
+                    if (stage == 1 && Scheduler.Now < trimUntil && ++tick % 3 == 0) TrimExtra(ids);
+                    // выданные артефакты не должны снова выпадать из сундуков: игра может пересобрать пулы, поэтому чистим раз в ~2 с
+                    if (stage == 1 && ++poolTick % 12 == 0) RemoveFromChests(ids);
                     if (!pending) return;
                     pending = false;
                     if (ids.Count == 0) return;                                // все ID = 0: ничего не выдаём
