@@ -6,7 +6,8 @@ namespace MagicBalance
 {
     /// <summary>
     /// Механики артефактов, которые не задаются таблицами (числа и описания — в balance.json, разделы artifacts/synergies):
-    ///   ДНК (118) — эффект 52 убран в balance.json; +8% к атаке и макс. HP за каждый обелиск боя, обычный или сломанный
+    ///   ДНК (118) — эффект 52 убран в balance.json; +8% к атаке и макс. HP за каждый обелиск боя, обычный или сломанный;
+    ///     прибавка макс. HP добавляется и к текущему HP, как в Unit_HpMaxUp игры
     ///     (оба вызывают C_Battle_Manager.Start_AreaChange — событие areaChange);
     ///   Железная дева (101) / Графиня (211) — боссы (особенность 11) взрываются при смерти: игра их пропускает, взрыв вызываем сами;
     ///   Экскалибур (197) — пока не собран Авалон (197, 109, 73, 181), атака героя −50% (проклятие; аура 300% — в balance.json);
@@ -21,15 +22,16 @@ namespace MagicBalance
         private const int NoRune = 9999999;   // так игра пишет «условия нет»
 
         private const int GreedKills = 2500;  // порог синергии 33 (эффект 733) — запасной, если игра не дала нормального значения
-        private static int _obelisks, _greedCond, _greedBase;
+        private static int _obelisks, _greedCond, _greedBase, _dnaHealed;   // _dnaHealed — за сколько обелисков уже прибавлено текущее HP
+        private static double _lastHpMax;
         private static C_Battle_AllyUnit _hero;
 
         public static void Enable(ModContext ctx)
         {
             var fx = ctx.Use<IEffects>("modkit_effects");
-            _obelisks = 0; _greedCond = 0; _greedBase = 0; _hero = null;
+            _obelisks = 0; _greedCond = 0; _greedBase = 0; _dnaHealed = 0; _lastHpMax = 0; _hero = null;
 
-            ctx.Events.On("battleStart", e => { _obelisks = 0; _greedCond = 0; _greedBase = 0; _hero = null; });
+            ctx.Events.On("battleStart", e => { _obelisks = 0; _greedCond = 0; _greedBase = 0; _dnaHealed = 0; _lastHpMax = 0; _hero = null; });
             ctx.Events.On("areaChange", e =>
             {
                 _obelisks++;
@@ -64,6 +66,12 @@ namespace MagicBalance
                     v.MulPercent("UnitApply_Attack", DnaPct * _obelisks);
                     v.MulPercent("UnitApply_HpMax", DnaPct * _obelisks);
                 }
+                // как Unit_HpMaxUp в игре: прибавка максимального HP за новый обелиск прибавляется и к текущему HP
+                var max = v.Field("UnitApply_HpMax").Value;
+                if (Has(Dna) && _obelisks > _dnaHealed && _lastHpMax > 0 && max > _lastHpMax)
+                    C_Battle_AllyUnit.Unit_Hp = (float)System.Math.Min(max, C_Battle_AllyUnit.Unit_Hp + (max - _lastHpMax));
+                if (Has(Dna)) _dnaHealed = _obelisks;
+                _lastHpMax = max;
                 if (Has(Excalibur) && !Avalon.All(Has)) v.MulPercent("UnitApply_Attack", CursePct);
             });
         }
