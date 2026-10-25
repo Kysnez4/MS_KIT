@@ -38,7 +38,7 @@ namespace ModKit
     {
         public ModDef Define() => new ModDef
         {
-            Id = "modkit_effects", Name = "ModKit: эффекты", Version = "1.0", Library = true,
+            Id = "modkit_effects", Name = "ModKit: эффекты", Version = "1.1", Library = true,
             OnEnable = ctx => ctx.Expose(this),
         };
         IEffects ILibrary<IEffects>.For(ModContext ctx) => new EffectsFor(ctx);

@@ -198,13 +198,14 @@ namespace ModKit
 
                 var icon = st.Def.Meta?.Icon;
                 if (icon != null) Picture(card.rt, icon, 14, 8, 62, 62);
-                Tint(Label(card.rt, st.Def.Name, icon != null ? 88 : 20, 8, W - (icon != null ? 258 : 190), 62, 32), st.Enabled ? Col(1, 1, 1) : Col(0.85, 0.85, 0.85));
+                Tint(Label(card.rt, ModKit.Lang.T(st.Def.Source, "name", st.Def.Name), icon != null ? 88 : 20, 8, W - (icon != null ? 258 : 190), 62, 32), st.Enabled ? Col(1, 1, 1) : Col(0.85, 0.85, 0.85));
                 var state = Label(card.rt, blocked ? "ЖДЁТ" : st.Enabled ? "ВКЛ" : "ВЫКЛ", W - 160, 8, 140, 62, 30, 5);
                 Tint(state, blocked ? Col(1, 0.55, 0.35) : st.Enabled ? Col(0.45, 1, 0.45) : Col(0.55, 0.55, 0.55));
                 double ly = 74;
-                if (!string.IsNullOrEmpty(st.Def.Description))
+                var desc = ModKit.Lang.T(st.Def.Source, "description", st.Def.Description);
+                if (!string.IsNullOrEmpty(desc))
                 {
-                    Tint(Label(card.rt, st.Def.Description, 20, ly - 4, W - 40, 58, 23, 0), Col(0.7, 0.7, 0.7));
+                    Tint(Label(card.rt, desc, 20, ly - 4, W - 40, 58, 23, 0), Col(0.7, 0.7, 0.7));
                     ly += 62;
                 }
                 var info = string.Join(" · ", new[] { ver != null ? "v" + ver : null, st.Def.Meta?.Author }.Where(s => !string.IsNullOrEmpty(s)));

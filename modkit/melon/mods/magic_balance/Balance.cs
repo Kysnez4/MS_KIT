@@ -15,6 +15,7 @@ namespace MagicBalance
     ///   spells[id].attrs — эффекты атрибутов (строки Ability с ID из поля game);
     ///   combos[id] — эффекты, имя и требования комбинаций (MagicCom); newCombos — новые комбинации.
     ///   artifacts[id] / synergies[id] — полный список эффектов строки Ability / Synergy и (необязательно) lines/colors описания.
+    /// Тексты (lines, desc, name) — строкой/массивом или по языкам: {"ru": …, "en": …} (язык игры → en → ru).
     /// У атрибута и комбинации необязательные lines (строки описания 효과 설명줄01..06, до 6) и colors (цвет строк «#RRGGBB»):
     /// если они есть, описание переписывается, чтобы числа совпадали с новыми эффектами.
     /// Поля hero и pick — только калькулятор сайта, в игру не идут.
@@ -27,7 +28,7 @@ namespace MagicBalance
 
         public ModDef Define() => new ModDef
         {
-            Id = "magic_balance", Name = "Баланс магии", Version = "1.9",
+            Id = "magic_balance", Name = "Баланс магии", Version = "2.0",
             Description = "Правки заклинаний, их атрибутов и комбинаций из файла balance.json сайта modkit/tools/balance. Механики артефактов: ДНК без снижения, взрыв боссов Девой/Графиней, проклятие Экскалибура, руна неуязвимости Гильгамеша.",
             Depends = { ["modkit_data"] = ">=1.5", ["modkit_spells_data"] = ">=1.0", ["modkit_combos"] = ">=1.0", ["modkit_effects"] = ">=1.0" },
             // при каждом входе в главное меню правки проверяются заново: если игра перечитала таблицы, отличия снова записываются (иначе ничего не меняется)
@@ -83,8 +84,23 @@ namespace MagicBalance
         private static bool Has(JsonElement o, string k, out JsonElement v)
         {
             v = default;
-            return o.ValueKind == JsonValueKind.Object && o.TryGetProperty(k, out v) && v.ValueKind != JsonValueKind.Null;
+            if (!(o.ValueKind == JsonValueKind.Object && o.TryGetProperty(k, out v) && v.ValueKind != JsonValueKind.Null)) return false;
+            // тексты по языкам: «lines»/«desc»/«name» могут быть объектом {"ru": …, "en": …} — берём язык игры, затем en, ru
+            if ((k == "lines" || k == "desc" || k == "name") && v.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var code in new[] { _lang, "en", "ru" })
+                    if (code != null && v.TryGetProperty(code, out var t) && t.ValueKind != JsonValueKind.Null) { v = t; return true; }
+                return false;
+            }
+            return true;
         }
+
+        private static string _lang;     // язык игры (ctx.Lang) для текстов balance.json
+
+        /// <summary>ctx.Lang есть в ядре с 2026-10-25; на старом ядре — MissingMethodException при вызове, тогда русский.</summary>
+        private static string LangOf(ModContext ctx) { try { return LangCore(ctx); } catch { return "ru"; } }
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string LangCore(ModContext ctx) => ctx.Lang;
 
         /// <summary>Заклинание → слоты после применения scale/add: повторно множить нельзя, пока таблица не сброшена к исходной.</summary>
         private static readonly Dictionary<int, string> Done = new Dictionary<int, string>();
@@ -92,6 +108,7 @@ namespace MagicBalance
 
         private static void Apply(ModContext ctx, IData data)
         {
+            _lang = LangOf(ctx);
             if (data.Table("Ability").Length == 0 || data.Table("MagicCom").Length == 0) return;   // таблицы ещё не загружены
             var root = Load();
             int sp = 0, at = 0, cb = 0, nc = 0;
@@ -282,10 +299,61 @@ namespace MagicBalance
             var colors = text.Where(kv => kv.Key.EndsWith("색깔") && cols.Contains(kv.Key) && !Equals(t.Get(row, kv.Key) as string, kv.Value as string)).ToDictionary(kv => kv.Key, kv => kv.Value);
             if (lines != null && Enumerable.Range(1, 6).Any(n => cols.Contains($"효과 설명줄{n:00}") && !Equals(t.Get(row, $"효과 설명줄{n:00}") as string, text[$"효과 설명줄{n:00}"] as string)))
             { ch.Lines = lines; any = true; }
+            // своего описания нет, а значения эффектов изменились — меняем старые числа в тексте игры на новые
+            if (lines == null && ch.Effects != null && AutoLines(t, row, cols, cur, ch.Effects, out var auto, out int replaced))
+            { ch.Lines = auto; ctx.Log($"комбинация {id}: в описании заменено чисел {replaced}"); }
             if (!any && colors.Count == 0) return false;
             if (any) lib.Edit(id, ch);
             if (colors.Count > 0) data.Edit("MagicCom", id, colors);
             ctx.Log($"комбинация {id} «{t.Get(row, "이름")}»: {Fx(cur)} → {(ch.Effects != null ? Fx(ch.Effects) : "эффекты прежние")}" + (ch.Name != null ? $", имя «{ch.Name}»" : "") + (ch.Lines != null ? ", описание: " + string.Join(" / ", ch.Lines) : ""));
+            return true;
+        }
+
+        // ------------------------------------------------------------ числа в описании комбинации
+
+        private static readonly System.Text.RegularExpressions.Regex NumToken =
+            new System.Text.RegularExpressions.Regex(@"(?<![\d.,])\d+(?:[.,]\d+)?(?![\d])");
+
+        /// <summary>
+        /// Строки описания комбинации 01..06 с новыми числами: для эффектов с тем же ID и другим значением в тексте ищется
+        /// число, равное старому значению (по одному на эффект), и меняется на новое. Дробь пишется так же, как в тексте
+        /// (запятая в русском, точка в остальных языках). false — ничего не заменено.
+        /// </summary>
+        private static bool AutoLines(Table t, int row, HashSet<string> cols, List<Effect> cur, List<Effect> want, out List<string> lines, out int replaced)
+        {
+            lines = null; replaced = 0;
+            var changes = new List<(double oldV, double newV)>();
+            foreach (var w in want)
+            {
+                int k = cur.FindIndex(x => x.Id == w.Id);
+                if (k >= 0 && Math.Abs(cur[k].Value - w.Value) > 1e-6) changes.Add((cur[k].Value, w.Value));
+            }
+            if (changes.Count == 0) return false;
+            var src = Enumerable.Range(1, 6).Select(n => cols.Contains($"효과 설명줄{n:00}") ? (t.Get(row, $"효과 설명줄{n:00}") as string ?? "`") : "`").ToList();
+            var used = new HashSet<(int line, int pos)>();
+            var edits = new List<(int line, int pos, int len, string val)>();
+            foreach (var (oldV, newV) in changes)
+            {
+                bool done = false;
+                for (int li = 0; li < src.Count && !done; li++)
+                    foreach (System.Text.RegularExpressions.Match m in NumToken.Matches(src[li]))
+                    {
+                        if (used.Contains((li, m.Index))) continue;
+                        if (Math.Abs(double.Parse(m.Value.Replace(',', '.'), System.Globalization.CultureInfo.InvariantCulture) - oldV) > 1e-6) continue;
+                        used.Add((li, m.Index));
+                        bool ru = src[li].Any(ch => ch >= 'А' && ch <= 'я');
+                        var v = (Math.Round(newV * 100) / 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        edits.Add((li, m.Index, m.Length, ru ? v.Replace('.', ',') : v));
+                        done = true;
+                        break;
+                    }
+            }
+            if (edits.Count == 0) return false;
+            foreach (var e in edits.OrderByDescending(e => e.pos))
+                src[e.line] = src[e.line].Substring(0, e.pos) + e.val + src[e.line].Substring(e.pos + e.len);
+            int last = src.FindLastIndex(x => x != "`");
+            lines = src.Take(last + 1).ToList();
+            replaced = edits.Count;
             return true;
         }
 

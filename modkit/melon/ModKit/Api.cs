@@ -125,6 +125,10 @@ namespace ModKit
         void Toast(string text, double sec = 3);
         /// <summary>Файл из zip этого мода (путь внутри архива, например "icons/a.png"); null — нет файла или мод не из zip.</summary>
         byte[] ReadAsset(string path);
+        /// <summary>Код языка игры: ko, en, ja, zh_cn, zh_tw, es, de, pt, ru.</summary>
+        string Lang { get; }
+        /// <summary>Перевод из lang/&lt;язык&gt;.json в zip мода: язык игры → en → ru → fallback (если не задан — сам ключ).</summary>
+        string T(string key, string fallback = null);
         /// <summary>Таймеры по игровому времени (на паузе стоят).</summary>
         IGameTimer Timer { get; }
         /// <summary>Постоянное хранилище мода (JSON).</summary>

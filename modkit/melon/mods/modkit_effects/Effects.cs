@@ -64,11 +64,18 @@ namespace ModKit
         private static List<Action> _hooks = new List<Action>();
         private static V_Ability_Manager _mgr;
 
-        /// <summary>Просит игру пересчитать характеристики героя (как после выбора артефакта). false — менеджер ещё не известен.</summary>
+        /// <summary>
+        /// Просит игру пересчитать характеристики героя (как после выбора артефакта). false — менеджер ещё не известен.
+        /// AbilityStatApply в конце всегда ставит Time.timeScale рабочим — если пересчёт пришёл во время паузы (окно обелиска,
+        /// сундука, выбора заклинания), паузу возвращаем, иначе игра шла бы под открытым окном.
+        /// </summary>
         public static bool Recalc()
         {
             var m = _mgr; if (m == null) return false;
-            try { m.AbilityStatApply(2); return true; } catch (Exception e) { Log.Write("recalc: " + e.Message); return false; }
+            float scale = UnityEngine.Time.timeScale;
+            try { m.AbilityStatApply(2); return true; }
+            catch (Exception e) { Log.Write("recalc: " + e.Message); return false; }
+            finally { if (scale == 0f) UnityEngine.Time.timeScale = 0f; }
         }
         private static C_Battle_AllyUnit _lastHero;
         private static bool _dirty, _recomputed, _inDisplay;

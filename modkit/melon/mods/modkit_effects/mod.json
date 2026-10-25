@@ -2,7 +2,7 @@
   "id": "modkit_effects",
   "name": "ModKit: эффекты",
   "description": "Библиотека: свои эффекты артефактов и комбинаций, глобальные эффекты, проход по герою, пересчёт характеристик.",
-  "version": "1.0",
+  "version": "1.1",
   "library": true,
   "depends": {
     "modkit_data": ">=1.5"

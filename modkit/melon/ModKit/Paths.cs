@@ -12,6 +12,8 @@ namespace ModKit
         public static readonly string ModsDir = Path.Combine(Dir, "mods");
         public static readonly string ConfigPath = Path.Combine(Dir, "config.json");
         public static readonly string LogPath = Path.Combine(Dir, "modkit.log");
+        /// <summary>Журнал прошлого запуска: при старте modkit.log переносится сюда, новый пишется с чистого файла.</summary>
+        public static readonly string PrevLogPath = Path.Combine(Dir, "modkit.prev.log");
         /// <summary>Где кнопка «+» ищет архивы с mod.json (только по нажатию).</summary>
         public static readonly string[] SearchDirs = { "/sdcard/Download/ModKit", "/sdcard/Download" };
 
@@ -27,13 +29,22 @@ namespace ModKit
     public static class Log
     {
         private static readonly object Gate = new object();
+        private static bool _rotated;
 
         public static void Write(string msg)
         {
             MelonLogger.Msg(msg);
             try
             {
-                lock (Gate) File.AppendAllText(Paths.LogPath, $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+                lock (Gate)
+                {
+                    if (!_rotated)
+                    {
+                        _rotated = true;      // первая запись за запуск: прошлый журнал → modkit.prev.log, новый с чистого файла
+                        try { if (File.Exists(Paths.LogPath)) { File.Copy(Paths.LogPath, Paths.PrevLogPath, true); File.Delete(Paths.LogPath); } } catch { /* */ }
+                    }
+                    File.AppendAllText(Paths.LogPath, $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+                }
             }
             catch { /* файловый журнал не критичен: есть Latest.log */ }
         }

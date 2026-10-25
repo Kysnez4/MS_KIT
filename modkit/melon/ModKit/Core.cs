@@ -277,6 +277,8 @@ namespace ModKit
             public IScreen Screen => ScreenApi.Instance();
             public void Toast(string text, double sec = 3) => Toasts.Show(this, text, sec);
             public byte[] ReadAsset(string path) => Assets.Read(_st.Def.Source, path);
+            public string Lang => ModKit.Lang.Code;
+            public string T(string key, string fallback = null) => ModKit.Lang.T(_st.Def.Source, key, fallback);
             private GameTimer _timer; private IStore _store;
             private GameTimer TimerImpl => _timer ?? (_timer = new GameTimer(Every, Guard, _st.Cleanups));
             public IGameTimer Timer => TimerImpl;

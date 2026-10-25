@@ -6,7 +6,7 @@
 
 | Файл | Что |
 |---|---|
-| `/sdcard/MelonLoader/com.vkslrzm.Zombix/UserData/ModKit/modkit.log` | журнал ModKit: загрузка, включение модов, `ctx.Log` (`[id] …`), `ОШИБКА`, отчёт о прошлом вылете |
+| `/sdcard/MelonLoader/com.vkslrzm.Zombix/UserData/ModKit/modkit.log` | журнал ModKit текущего запуска: загрузка, включение модов, `ctx.Log` (`[id] …`), `ОШИБКА`, отчёт о прошлом вылете. При старте игры прошлый журнал переносится в `modkit.prev.log` (там смотреть, что было перед вылетом) |
 | `/sdcard/MelonLoader/com.vkslrzm.Zombix/MelonLoader/Latest.log` | журнал MelonLoader целиком (в том числе ваши `Log`) |
 | `…/UserData/ModKit/config.json` | какие моды включены и настройки |
 | `…/UserData/ModKit/store/<id>.json` | `ctx.Store` мода |
