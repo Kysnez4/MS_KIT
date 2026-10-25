@@ -3,8 +3,8 @@
 ## 1. Что понадобится
 - **.NET SDK 8 или новее** (`dotnet --version`). Мод собирается под `net8.0`.
 - **Телефон с Zombix (MelonLoader)** (arm64) и кабель: для просмотра журнала и копирования файлов удобен `adb` (Android SDK Platform-Tools). Без `adb` тоже можно: zip кладётся в `Download/ModKit` и ставится кнопкой «+».
-- **Ядро `ModKit.dll`**: возьмите из `Zombix-melon-ModKit.zip` (файл `Mods/ModKit.dll`) со страницы [релизов](https://github.com/Kysnez4/MS_KIT/releases) или соберите: `dotnet build -c Release modkit/melon/ModKit`.
-- **Библиотеки `modkit_*.dll`**, если мод их использует: из zip релиза [modkit-2.0-mods](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-2.0-mods) (внутри каждого zip лежит одноимённая `.dll`) или соберите из `modkit/melon/mods/modkit_*`.
+- **Ядро `ModKit.dll`**: возьмите из `ModKit-core.zip` (файл `Mods/ModKit.dll`) в [релизе ядра](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-core) или соберите: `dotnet build -c Release modkit/melon/ModKit`.
+- **Библиотеки `modkit_*.dll`**, если мод их использует: из zip [релиза библиотек](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-libs) (внутри каждого zip лежит одноимённая `.dll`) или соберите из `modkit/melon/mods/modkit_*`.
 - **Ссылочные сборки игры.** Это сгенерированные MelonLoader обёртки кода игры; на ПК их нет, их забирают с телефона после первого запуска Zombix:
 
 ```bash

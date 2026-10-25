@@ -8,23 +8,23 @@
 |---|---|---|
 | Моды | C#, zip с `mod.json` и DLL | TypeScript / JS, zip |
 | Что умеют | враги, урон, заклинания, союзники, свои эффекты, артефакты, классы, интерфейс | правка таблиц и эффектов, окна |
-| Релиз | [zombix-melon-20261020](https://github.com/Kysnez4/MS_KIT/releases/tag/zombix-melon-20261020) | [zombix-20261017-1020](https://github.com/Kysnez4/MS_KIT/releases/tag/zombix-20261017-1020) |
-| Моды | [modkit-2.0-mods](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-2.0-mods) | [Моды для Zombix](https://github.com/Kysnez4/MS_KIT/releases/tag/mods) |
+| Релиз | [Zombix (MelonLoader) v0.9941](https://github.com/Kysnez4/MS_KIT/releases/tag/zombix-melon-v0.9941), [ядро ModKit](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-core) | [zombix-20261017-1020](https://github.com/Kysnez4/MS_KIT/releases/tag/zombix-20261017-1020) |
+| Моды | [моды](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-mods), [библиотеки](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-libs) | [Моды для Zombix](https://github.com/Kysnez4/MS_KIT/releases/tag/mods) |
 
 ## Установка Zombix (MelonLoader)
 
 Нужен телефон с arm64. Компьютер для установки не обязателен.
 
-1. Скачайте `Zombix-melon.apk` и `Zombix-melon-ModKit.zip` из [релиза](https://github.com/Kysnez4/MS_KIT/releases/tag/zombix-melon-20261020).
+1. Скачайте `Zombix-melon.apk` из [релиза Zombix](https://github.com/Kysnez4/MS_KIT/releases/tag/zombix-melon-v0.9941) и `ModKit-core.zip` из [релиза ядра](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-core).
 2. Установите APK (разрешите установку из неизвестных источников; если Play Protect предупредит — «Всё равно установить»).
 3. Запустите игру. Она сама откроет настройки «Доступ ко всем файлам»: разрешите его и вернитесь в игру. Дождитесь главного меню (первый запуск занимает несколько минут: идёт подготовка библиотек игры), затем закройте игру.
-4. Распакуйте `Zombix-melon-ModKit.zip` в папку `/sdcard/MelonLoader/com.vkslrzm.Zombix/` (папки `Mods` и `UserData` должны слиться с существующими). Запустите игру снова.
+4. Распакуйте `ModKit-core.zip` в папку `/sdcard/MelonLoader/com.vkslrzm.Zombix/` (папки `Mods` и `UserData` должны слиться с существующими). Запустите игру снова.
 5. В главном меню откройте окно «Моды»: карточка мода включает и выключает его, у мода могут быть настройки.
 
 Покупки в клоне не работают. Если что-то не так, смотрите журнал: `/sdcard/MelonLoader/com.vkslrzm.Zombix/UserData/ModKit/modkit.log`.
 
 ### Как поставить ещё моды
-Скачайте zip мода из [релиза с модами](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-2.0-mods) в папку `Download` (или `Download/ModKit`), в окне «Моды» нажмите «+» и выберите версию. Библиотеки `modkit_*` включаются сами, когда включён мод, которому они нужны. Если мод пишет, что нужна библиотека, скачайте её тем же способом.
+Скачайте zip мода из [релиза с модами](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-mods), а нужные ему библиотеки — из [релиза библиотек](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-libs) в папку `Download` (или `Download/ModKit`), в окне «Моды» нажмите «+» и выберите версию. Библиотеки `modkit_*` включаются сами, когда включён мод, которому они нужны. Если мод пишет, что нужна библиотека, скачайте её из релиза библиотек тем же способом.
 
 ### Какие моды есть
 `achievements` (достижения), `active_pack` (активные заклинания), `area_mechanics` (механики зон), `art_swap` (свои иконки артефактов), `artifact_pack` (12 новых артефактов и 2 синергии), `auto_artifact` (артефакт на старте боя), `class_menu` (свои классы), `class_practice` (практика классов за бой), `kill_streak` (серия убийств), `projectile_cap` (лимит снарядов), `spell_tuner` (настройка заклинаний), `gamelog` (журнал игры).
