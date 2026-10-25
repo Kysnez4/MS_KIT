@@ -1,5 +1,8 @@
 # ModKit (MelonLoader): журнал изменений
 
+## Мод achievements 1.1 (2026-10-25)
+- Пересобран под ядро 2.0 и библиотеки (`modkit_spells`, `modkit_effects`): старый zip 1.0 был собран под ядро с `ISpells` и падал с `TypeLoadException`. Проверено на телефоне: включается, подтягивает `modkit_spells`, прогресс загружается.
+
 ## Ядро: переводы и журнал; modkit_effects 1.1; magic_balance 2.0 (2026-10-25)
 - Ядро: переводы модов — `lang/<язык>.json` в zip, `ctx.Lang` (ko, en, ja, zh_cn, zh_tw, es, de, pt, ru по `Game_SystemLanguage`), `ctx.T(ключ, запасной)` (язык игры → en → ru); название и описание в окне «Моды» из ключей `name`/`description`. `modkit.log` начинается заново при каждом запуске, прошлый — `modkit.prev.log`. Проверено на телефоне: журнал, загрузка модов.
 - `modkit_effects` 1.1: `Recalc()` во время паузы не снимает её (`AbilityStatApply` в конце всегда ставит `Time.timeScale`) — игра больше не идёт под окном выбора обелиска.

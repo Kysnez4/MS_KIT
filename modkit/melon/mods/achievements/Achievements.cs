@@ -150,7 +150,7 @@ namespace Achievements
 
         public ModDef Define() => new ModDef
         {
-            Id = "achievements", Name = "Достижения", Version = "1.0",
+            Id = "achievements", Name = "Достижения", Version = "1.1",
             Description = "Дерево из 20 достижений (убийства, боссы, бои, время жизни, смены зоны) с маленькими постоянными наградами. «Настройки» — карта достижений. На устройстве не проверено.",
             Options =
             {

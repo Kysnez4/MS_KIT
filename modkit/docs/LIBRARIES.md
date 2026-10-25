@@ -6,7 +6,7 @@
 2. `csproj`: `<Reference Include="modkit_combat"><HintPath>путь/modkit_combat.dll</HintPath><Private>false</Private></Reference>`;
 3. код: `var combat = ctx.Use<ICombat>("modkit_combat");` — один объект на мод, всё сделанное через него откатывается при выключении вашего мода.
 
-DLL библиотек лежат в zip с одноимённым названием ([релиз](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-2.0-mods)) или собираются из `modkit/melon/mods/modkit_*`. Пометка ✅ — проверено на устройстве, ◻ — нет.
+DLL библиотек лежат в zip с одноимённым названием ([релиз библиотек](https://github.com/Kysnez4/MS_KIT/releases/tag/modkit-libs)) или собираются из `modkit/melon/mods/modkit_*`. Пометка ✅ — проверено на устройстве, ◻ — нет.
 
 ## Граф зависимостей
 
