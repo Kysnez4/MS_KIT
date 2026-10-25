@@ -28,7 +28,7 @@ namespace MagicBalance
 
         public ModDef Define() => new ModDef
         {
-            Id = "magic_balance", Name = "Баланс магии", Version = "2.0",
+            Id = "magic_balance", Name = "Баланс магии", Version = "2.1",
             Description = "Правки заклинаний, их атрибутов и комбинаций из файла balance.json сайта modkit/tools/balance. Механики артефактов: ДНК без снижения, взрыв боссов Девой/Графиней, проклятие Экскалибура, руна неуязвимости Гильгамеша.",
             Depends = { ["modkit_data"] = ">=1.5", ["modkit_spells_data"] = ">=1.0", ["modkit_combos"] = ">=1.0", ["modkit_effects"] = ">=1.0" },
             // при каждом входе в главное меню правки проверяются заново: если игра перечитала таблицы, отличия снова записываются (иначе ничего не меняется)
