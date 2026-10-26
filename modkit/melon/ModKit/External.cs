@@ -78,27 +78,34 @@ namespace ModKit
             return res;
         }
 
+        /// <summary>Поля mod.json, нужные до загрузки DLL: id, версия, библиотека ли, depends.</summary>
+        private class ZipMeta { public string Id, Version; public bool Lib; public string[] Deps = new string[0]; }
+
+        /// <summary>Читает mod.json из архива без загрузки кода. Битый архив или нет mod.json — null.</summary>
+        private static ZipMeta PeekMeta(string path)
+        {
+            try
+            {
+                using var zip = ZipFile.OpenRead(path);
+                var e = zip.GetEntry("mod.json");
+                if (e == null) return null;
+                using var doc = JsonDocument.Parse(ReadAll(e), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+                var root = doc.RootElement;
+                var m = new ZipMeta { Id = Str(root, "id"), Version = Str(root, "version"), Lib = Bool(root, "library", false) };
+                if (root.TryGetProperty("depends", out var dep) && dep.ValueKind == JsonValueKind.Object) m.Deps = dep.EnumerateObject().Select(x => x.Name).ToArray();
+                return m;
+            }
+            catch { return null; }
+        }
+
         /// <summary>Порядок загрузки архивов: библиотеки первыми, зависимости (depends из mod.json) раньше тех, кто от них зависит.</summary>
         private static List<string> LoadOrder(IEnumerable<string> zips)
         {
             var info = new List<(string Path, string Id, bool Lib, string[] Deps)>();
             foreach (var path in zips)
             {
-                string id = null; bool lib = false; var deps = new string[0];
-                try
-                {
-                    using var zip = ZipFile.OpenRead(path);
-                    var e = zip.GetEntry("mod.json");
-                    if (e != null)
-                    {
-                        using var doc = JsonDocument.Parse(ReadAll(e), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-                        id = Str(doc.RootElement, "id");
-                        lib = Bool(doc.RootElement, "library", false);
-                        if (doc.RootElement.TryGetProperty("depends", out var dep) && dep.ValueKind == JsonValueKind.Object) deps = dep.EnumerateObject().Select(x => x.Name).ToArray();
-                    }
-                }
-                catch { /* битый архив: ошибку покажет загрузка */ }
-                info.Add((path, id, lib, deps));
+                var m = PeekMeta(path);     // битый архив: ошибку покажет загрузка
+                info.Add((path, m?.Id, m?.Lib ?? false, m?.Deps ?? new string[0]));
             }
             var byId = new Dictionary<string, (string Path, string Id, bool Lib, string[] Deps)>();
             foreach (var i in info) if (i.Id != null && !byId.ContainsKey(i.Id)) byId[i.Id] = i;
@@ -174,24 +181,40 @@ namespace ModKit
         /// <summary>Подключает мод из найденного архива (или обновляет установленный). Возвращает сообщение; бросает исключение с причиной.</summary>
         public static string InstallCandidate(Candidate c)
         {
-            var def = ReadModZip(c.Path);
-            var cur = Core.Mods.FirstOrDefault(m => m.Def.Id == def.Id);
+            // всё решаем по mod.json до загрузки DLL: лишняя загрузка сборки библиотеки ломает типы у модов, связанных с прежней копией
+            var meta = PeekMeta(c.Path) ?? throw new Exception("не удалось прочитать mod.json");
+            var cur = Core.Mods.FirstOrDefault(m => m.Def.Id == meta.Id);
             if (cur != null)
             {
-                if (c.Relation == "same") throw new Exception("эта версия уже установлена");
+                // отношение версий пересчитываем: строка в окне могла устареть (повторное нажатие до перерисовки)
                 var from = Core.ModVersion(cur);
+                var rel = RelationOf(meta.Version, from);
+                if (rel == "same") throw new Exception("эта версия уже установлена");
+                var down = rel == "downgrade";
                 var dest = cur.Def.Source ?? System.IO.Path.Combine(Paths.ModsDir, c.File);
+                if (cur.Def.Library || meta.Lib)
+                {
+                    // сборку библиотеки на ходу не подменить: другие моды уже связаны с загруженной копией (общие типы API).
+                    // Кладём архив на место прежнего, новая версия загрузится при следующем запуске игры
+                    if (!StoreZip(c, dest)) throw new Exception("не удалось скопировать архив в папку модов");
+                    Log.Write($"библиотека {(down ? "откачена" : "обновлена")} до перезапуска: {meta.Id} {from ?? "?"} -> {meta.Version ?? "?"} ({c.Path})");
+                    return $"{(down ? "Откат" : "Обновление")}: {c.Name ?? meta.Id} v{from ?? "?"} → v{meta.Version ?? "?"} — перезапустите игру";
+                }
+                var def = ReadModZip(c.Path);
                 Core.ReplaceMod(cur, def);               // при ошибке бросает исключение, прежняя версия остаётся
                 def.Source = StoreZip(c, dest) ? dest : c.Path;
-                var down = c.Relation == "downgrade";
                 Log.Write($"мод {(down ? "откачен" : "обновлён")}: {def.Id} {from ?? "?"} -> {Core.ModVersion(cur) ?? "?"} ({c.Path})");
                 return $"{(down ? "Откат" : "Обновлён")}: {def.Name} {(from != null ? "v" + from : "")} → v{Core.ModVersion(cur) ?? "?"}";
             }
-            if (!Core.AddExternal(def)) throw new Exception("мод с таким id уже установлен");
+            // зависимости — раньше: иначе DLL мода загрузится без библиотеки и ссылки на неё не разрешатся до перезапуска
+            var missing = meta.Deps.Where(d => !Core.Mods.Any(m => m.Def.Id == d)).ToList();
+            if (missing.Count > 0) throw new Exception($"сначала установите: {string.Join(", ", missing)}");
+            var nd = ReadModZip(c.Path);
+            if (!Core.AddExternal(nd)) throw new Exception("мод с таким id уже установлен");
             var target = System.IO.Path.Combine(Paths.ModsDir, c.File);
-            def.Source = StoreZip(c, target) ? target : c.Path;
-            Log.Write($"мод установлен: {def.Id} ({c.Path})");
-            return $"Установлен: {def.Name}";
+            nd.Source = StoreZip(c, target) ? target : c.Path;
+            Log.Write($"мод установлен: {nd.Id} ({c.Path})");
+            return $"Установлен: {nd.Name}";
         }
 
         // ---------------------------------------------------------------- чтение архива
@@ -250,7 +273,16 @@ namespace ModKit
             }
             var types = all.Where(t => typeof(IKitMod).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface).ToList();
             if (types.Count != 1) throw new Exception($"{mainName}: нужен ровно один класс с интерфейсом IKitMod (найдено {types.Count})");
-            var def = ((IKitMod)Activator.CreateInstance(types[0])).Define() ?? throw new Exception("Define() вернул null");
+            ModDef def;
+            try { def = ((IKitMod)Activator.CreateInstance(types[0])).Define() ?? throw new Exception("Define() вернул null"); }
+            catch (TargetInvocationException e) when (e.InnerException != null)
+            {
+                // конструктор мода упал; чаще всего — не нашлась сборка библиотеки
+                var inner = e.InnerException;
+                if (inner is FileNotFoundException || inner is FileLoadException || inner is TypeLoadException)
+                    throw new Exception("не загрузилась библиотека, от которой зависит мод. Сначала установите её и перезапустите игру");
+                throw new Exception($"конструктор мода: {inner.Message}");
+            }
             def.Library = Bool(meta, "library", def.Library);
             if (def.OnEnable == null && !def.Library) throw new Exception("в ModDef нет OnEnable");
 

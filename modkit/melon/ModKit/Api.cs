@@ -196,7 +196,10 @@ namespace ModKit
             lock (UseCache)
             {
                 if (UseCache.TryGetValue(key, out var cached)) return (T)cached;
-                var lib = ctx.Mod<ILibrary<T>>(libraryId) ?? throw new InvalidOperationException($"библиотека «{libraryId}» не включена: добавьте её в depends мода {ctx.Id}");
+                var lib = ctx.Mod<ILibrary<T>>(libraryId) ?? throw new InvalidOperationException(ctx.Mod<object>(libraryId) != null
+                    // библиотека запущена, но её тип из другой загруженной копии DLL (переустановка без перезапуска)
+                    ? $"библиотека «{libraryId}» загружена в двух копиях: перезапустите игру"
+                    : $"библиотека «{libraryId}» не включена: добавьте её в depends мода {ctx.Id}");
                 var api = lib.For(ctx);
                 UseCache[key] = api;
                 ctx.OnCleanup(() => { lock (UseCache) UseCache.Remove(key); });

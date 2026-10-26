@@ -307,8 +307,11 @@ namespace ModKit
             double viewTop = 170, viewH = h - viewTop - 100, W = LogicalW - 140;
             var list = AddScroll(box.rt, 30, viewTop, W, viewH);
 
+            bool busy = false;      // второе нажатие до удаления окна шло бы по устаревшей строке
             void Install(Candidate cand)
             {
+                if (busy) return;
+                busy = true;
                 var open = expanded.ToList();
                 SafeDestroy(dim.go);
                 string msg;
