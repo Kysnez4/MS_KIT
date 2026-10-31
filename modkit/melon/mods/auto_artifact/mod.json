@@ -2,7 +2,7 @@
   "id": "auto_artifact",
   "name": "Артефакт на старте боя",
   "description": "Сразу выдаёт выбранные артефакты в начале боя и убирает их из сундуков. ID и количество — кнопка «Настройки».",
-  "version": "2.3",
+  "version": "3",
   "author": "Pavel",
   "main": "auto_artifact.dll",
   "restartRequired": false,

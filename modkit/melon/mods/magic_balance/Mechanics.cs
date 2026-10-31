@@ -6,38 +6,34 @@ namespace MagicBalance
 {
     /// <summary>
     /// Механики артефактов, которые не задаются таблицами (числа и описания — в balance.json, разделы artifacts/synergies):
-    ///   ДНК (118) — эффект 52 убран в balance.json; +8% к атаке и макс. HP за каждый обелиск боя, обычный или сломанный;
-    ///     прибавка макс. HP добавляется и к текущему HP, как в Unit_HpMaxUp игры
-    ///     (оба вызывают C_Battle_Manager.Start_AreaChange — событие areaChange);
+    ///   ДНК (118) — работает механика игры (эффект 52), мод только убирает снижение эффективности: игра считает
+    ///     бонус как сумму 8 × 0.85^i по обелискам (C_Battle_AllyUnit.StartInformation_B, в версии 612 — RVA 0x11c15c8),
+    ///     инструкцию загрузки 0.85 меняем на fmov #1.0 (см. <see cref="DnaPatch"/>). Своя копия ДНК (через modkit_effects)
+    ///     не учитывала потолок лечения ApplyPHpMaxNum и счётчик обелисков игры — отсюда «урон от лечения»;
     ///   Железная дева (101) / Графиня (211) — боссы (особенность 11) взрываются при смерти: игра их пропускает, взрыв вызываем сами;
-    ///   Экскалибур (197) — пока не собран Авалон (197, 109, 73, 181), атака героя −50% (проклятие; аура 300% — в balance.json);
+    ///   Экскалибур (197) — пока не активна синергия Авалон (5; собрана 197, 109, 73, 181 или включена Магнум Опусом), атака героя −50% (проклятие; аура 300% — в balance.json);
     ///   Гильгамеш (синергия 33) — руна по убийствам: неуязвимость вместо жадности.
     /// </summary>
     internal static class Mechanics
     {
-        private const int Dna = 118, Excalibur = 197;
+        private const int Excalibur = 197, AvalonSyn = 5;
         private static readonly int[] Avalon = { 197, 109, 73, 181 };
-        private const double DnaPct = 8, CursePct = -50;
+        private const double CursePct = -50;
         private const int BossFlag = 11;      // особенность врага: «не взрывается при смерти» (у всех боссов)
         private const int NoRune = 9999999;   // так игра пишет «условия нет»
 
         private const int GreedKills = 2500;  // порог синергии 33 (эффект 733) — запасной, если игра не дала нормального значения
-        private static int _obelisks, _greedCond, _greedBase, _dnaHealed;   // _dnaHealed — за сколько обелисков уже прибавлено текущее HP
-        private static double _lastHpMax;
+        private static int _greedCond, _greedBase, _curse;
         private static C_Battle_AllyUnit _hero;
 
         public static void Enable(ModContext ctx)
         {
             var fx = ctx.Use<IEffects>("modkit_effects");
-            _obelisks = 0; _greedCond = 0; _greedBase = 0; _dnaHealed = 0; _lastHpMax = 0; _hero = null;
+            _greedCond = 0; _greedBase = 0; _hero = null;
+            DnaPatch.Enable(ctx);
 
-            ctx.Events.On("battleStart", e => { _obelisks = 0; _greedCond = 0; _greedBase = 0; _dnaHealed = 0; _lastHpMax = 0; _hero = null; });
-            ctx.Events.On("areaChange", e =>
-            {
-                _obelisks++;
-                ctx.Log($"обелиск №{_obelisks} (тип {Z_Database.ArtifactType})");
-                if (Has(Dna)) fx.Recalc();
-            });
+            ctx.Events.On("battleStart", e => { _greedCond = 0; _greedBase = 0; _curse = 0; _hero = null; });
+            ctx.Events.On("areaChange", e => ctx.Log($"обелиск (тип {Z_Database.ArtifactType})"));
             ctx.Events.On("enemyDeath", e => ctx.Guard("взрыв босса", () => BossBlast((e as EventData)?.Get<C_Battle_EnemyUnit>("enemy"), ctx)));
 
             // Гильгамеш: порог игры (ApplyRuneObtainKillCondition) прячем, счётчик убийств игра ведёт сама (Play_Unit_Death),
@@ -61,25 +57,20 @@ namespace MagicBalance
                 if (cond.Value > 0 && cond.Value < NoRune) _greedBase = (int)cond.Value;
                 _greedCond = Gilgamesh() ? (_greedBase > 0 ? _greedBase : GreedKills) : 0;
                 if (_greedCond > 0) cond.Value = NoRune;
-                if (Has(Dna) && _obelisks > 0)
-                {
-                    v.MulPercent("UnitApply_Attack", DnaPct * _obelisks);
-                    v.MulPercent("UnitApply_HpMax", DnaPct * _obelisks);
-                }
-                // как Unit_HpMaxUp в игре: прибавка максимального HP за новый обелиск прибавляется и к текущему HP
-                var max = v.Field("UnitApply_HpMax").Value;
-                if (Has(Dna) && _obelisks > _dnaHealed && _lastHpMax > 0 && max > _lastHpMax)
-                    C_Battle_AllyUnit.Unit_Hp = (float)System.Math.Min(max, C_Battle_AllyUnit.Unit_Hp + (max - _lastHpMax));
-                if (Has(Dna)) _dnaHealed = _obelisks;
-                _lastHpMax = max;
-                if (Has(Excalibur) && !Avalon.All(Has)) v.MulPercent("UnitApply_Attack", CursePct);
+                // как дебафф Плазмы у Андроида: снимается, когда синергия Авалон активна (в т.ч. через Магнум Опус), а не по 4 артефактам
+                int curse = !Has(Excalibur) ? 0 : SynergyOn(AvalonSyn) || Avalon.All(Has) ? 2 : 1;
+                if (curse == 1) v.MulPercent("UnitApply_Attack", CursePct);
+                if (curse != _curse) { _curse = curse; if (curse > 0) ctx.Log(curse == 1 ? "Экскалибур: проклятие (атака −50%)" : $"Экскалибур: проклятие снято (синергия Авалон {(SynergyOn(AvalonSyn) ? "активна" : "не активна, собраны 4 артефакта")})"); }
             });
         }
 
         /// <summary>Синергия 33 включена (List_ApplySynergyON[ID] = 1, как в журнале auto_artifact «ON[33]=1»).</summary>
-        private static bool Gilgamesh()
+        private static bool Gilgamesh() => SynergyOn(33);
+
+        /// <summary>Синергия включена игрой (List_ApplySynergyON[ID] = 1) — ставится и Магнум Опусом.</summary>
+        private static bool SynergyOn(int id)
         {
-            try { var on = Z_Database.List_ApplySynergyON; return on != null && on.Count > 33 && on[33] > 0; } catch { return false; }
+            try { var on = Z_Database.List_ApplySynergyON; return on != null && on.Count > id && on[id] > 0; } catch { return false; }
         }
 
         private static bool Has(int id)

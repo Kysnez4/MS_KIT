@@ -28,7 +28,7 @@ namespace MagicBalance
 
         public ModDef Define() => new ModDef
         {
-            Id = "magic_balance", Name = "Баланс магии", Version = "2.1",
+            Id = "magic_balance", Name = "Баланс магии", Version = "3",
             Description = "Правки заклинаний, их атрибутов и комбинаций из файла balance.json сайта modkit/tools/balance. Механики артефактов: ДНК без снижения, взрыв боссов Девой/Графиней, проклятие Экскалибура, руна неуязвимости Гильгамеша.",
             Depends = { ["modkit_data"] = ">=1.5", ["modkit_spells_data"] = ">=1.0", ["modkit_combos"] = ">=1.0", ["modkit_effects"] = ">=1.0" },
             // при каждом входе в главное меню правки проверяются заново: если игра перечитала таблицы, отличия снова записываются (иначе ничего не меняется)
@@ -37,6 +37,7 @@ namespace MagicBalance
             {
                 var data = ctx.Use<IData>("modkit_data");
                 Mechanics.Enable(ctx);
+                BaseStats.Enable(ctx, Load());
                 Done.Clear();
                 ctx.OnCleanup(Done.Clear);
                 data.WhenReady(() => ctx.Guard("применение баланса", () => Apply(ctx, data)));
@@ -60,8 +61,19 @@ namespace MagicBalance
             return JsonDocument.Parse(r.ReadToEnd()).RootElement;
         }
 
+        /// <summary>Игра читает значения эффектов из таблиц как целые (unbox int), дробное в ячейку не записать (1.5 → 2) —
+        /// округляем сами, иначе правка каждый раз считалась бы «не применённой». Предупреждение — один раз за запуск.</summary>
         private static List<Effect> Effects(JsonElement a) =>
-            a.ValueKind != JsonValueKind.Array ? new List<Effect>() : a.EnumerateArray().Select(e => new Effect(e[0].GetInt32(), e[1].GetDouble())).ToList();
+            a.ValueKind != JsonValueKind.Array ? new List<Effect>() : a.EnumerateArray().Select(e => new Effect(e[0].GetInt32(), Whole(e[0].GetInt32(), e[1].GetDouble()))).ToList();
+
+        private static readonly HashSet<string> Rounded = new HashSet<string>();
+        private static bool _roundWarned;
+        private static double Whole(int id, double v)
+        {
+            double r = Math.Round(v, MidpointRounding.AwayFromZero);
+            if (Math.Abs(r - v) > 1e-9) Rounded.Add($"{id}={v.ToString(System.Globalization.CultureInfo.InvariantCulture)} → {r}");
+            return r;
+        }
 
         private static string Fx(IEnumerable<Effect> l) => l.Any() ? string.Join(", ", l.Select(e => $"{e.Id}={e.Value}")) : "—";
 
@@ -139,6 +151,7 @@ namespace MagicBalance
                 foreach (var p in arts.EnumerateObject()) if (EditRow(ctx, data, "Ability", 9, int.Parse(p.Name), p.Value)) ar++;
             if (Has(root, "synergies", out var syns))
                 foreach (var p in syns.EnumerateObject()) if (EditRow(ctx, data, "Synergy", 3, int.Parse(p.Name), p.Value)) sy++;
+            if (Rounded.Count > 0 && !_roundWarned) { _roundWarned = true; ctx.Log("дробные значения эффектов округлены (игра хранит их целыми): " + string.Join(", ", Rounded)); Rounded.Clear(); }
             if (sp + at + cb + nc + ar + sy > 0) ctx.Log($"баланс применён: заклинаний {sp}, атрибутов {at}, комбинаций изменено {cb}, добавлено {nc}, артефактов {ar}, синергий {sy}");
         }
 
@@ -301,7 +314,10 @@ namespace MagicBalance
             { ch.Lines = lines; any = true; }
             // своего описания нет, а значения эффектов изменились — меняем старые числа в тексте игры на новые
             if (lines == null && ch.Effects != null && AutoLines(t, row, cols, cur, ch.Effects, out var auto, out int replaced))
-            { ch.Lines = auto; ctx.Log($"комбинация {id}: в описании заменено чисел {replaced}"); }
+            { ch.Lines = auto; ctx.Log($"комбинация {id}: в описании изменено чисел/строк {replaced}"); }
+            var fresh = lines == null && ch.Effects != null ? ch.Effects.Where(w => !cur.Any(x => x.Id == w.Id)).Select(w => w.Id).ToList() : null;
+            if (fresh != null && fresh.Count > 0)
+                ctx.Log($"комбинация {id}: новые эффекты {string.Join(", ", fresh)} не описаны в тексте — добавь «lines» в balance.json");
             if (!any && colors.Count == 0) return false;
             if (any) lib.Edit(id, ch);
             if (colors.Count > 0) data.Edit("MagicCom", id, colors);
@@ -316,46 +332,64 @@ namespace MagicBalance
 
         /// <summary>
         /// Строки описания комбинации 01..06 с новыми числами: для эффектов с тем же ID и другим значением в тексте ищется
-        /// число, равное старому значению (по одному на эффект), и меняется на новое. Дробь пишется так же, как в тексте
-        /// (запятая в русском, точка в остальных языках). false — ничего не заменено.
+        /// число, равное старому значению (по одному на эффект), и меняется на новое. После «х» множитель от 100 пишется
+        /// сотыми (999 → х9,99, 2000 → х20), как в тексте игры. Строка эффекта, которого больше нет, удаляется; для нового
+        /// эффекта строку не придумываем — warn (нужны свои «lines»). Дробь — запятая в русском. false — ничего не изменено.
         /// </summary>
         private static bool AutoLines(Table t, int row, HashSet<string> cols, List<Effect> cur, List<Effect> want, out List<string> lines, out int replaced)
         {
             lines = null; replaced = 0;
-            var changes = new List<(double oldV, double newV)>();
-            foreach (var w in want)
+            var changes = new List<(double oldV, double? newV)>();
+            foreach (var c in cur)
             {
-                int k = cur.FindIndex(x => x.Id == w.Id);
-                if (k >= 0 && Math.Abs(cur[k].Value - w.Value) > 1e-6) changes.Add((cur[k].Value, w.Value));
+                int k = want.FindIndex(x => x.Id == c.Id);
+                if (k < 0) changes.Add((c.Value, null));
+                else if (Math.Abs(c.Value - want[k].Value) > 1e-6) changes.Add((c.Value, want[k].Value));
             }
             if (changes.Count == 0) return false;
             var src = Enumerable.Range(1, 6).Select(n => cols.Contains($"효과 설명줄{n:00}") ? (t.Get(row, $"효과 설명줄{n:00}") as string ?? "`") : "`").ToList();
             var used = new HashSet<(int line, int pos)>();
+            var drop = new HashSet<int>();
             var edits = new List<(int line, int pos, int len, string val)>();
             foreach (var (oldV, newV) in changes)
             {
                 bool done = false;
                 for (int li = 0; li < src.Count && !done; li++)
+                {
+                    if (drop.Contains(li)) continue;
                     foreach (System.Text.RegularExpressions.Match m in NumToken.Matches(src[li]))
                     {
                         if (used.Contains((li, m.Index))) continue;
-                        if (Math.Abs(double.Parse(m.Value.Replace(',', '.'), System.Globalization.CultureInfo.InvariantCulture) - oldV) > 1e-6) continue;
+                        // множитель: «х9,99» (русский) или «9.99X» (английский) — знак до или после числа
+                        int after = m.Index + m.Length;
+                        bool mul = (m.Index > 0 && "хxХX×".IndexOf(src[li][m.Index - 1]) >= 0)
+                                   || (after < src[li].Length && "хxХX×".IndexOf(src[li][after]) >= 0);
+                        double num = double.Parse(m.Value.Replace(',', '.'), System.Globalization.CultureInfo.InvariantCulture);
+                        if (Math.Abs(num - Shown(oldV, mul)) > 1e-6) continue;
                         used.Add((li, m.Index));
-                        bool ru = src[li].Any(ch => ch >= 'А' && ch <= 'я');
-                        var v = (Math.Round(newV * 100) / 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
-                        edits.Add((li, m.Index, m.Length, ru ? v.Replace('.', ',') : v));
+                        if (newV == null) drop.Add(li);
+                        else
+                        {
+                            bool ru = src[li].Any(ch => ch >= 'А' && ch <= 'я');
+                            var v = (Math.Round(Shown(newV.Value, mul) * 100) / 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                            edits.Add((li, m.Index, m.Length, ru ? v.Replace('.', ',') : v));
+                        }
                         done = true;
                         break;
                     }
+                }
             }
-            if (edits.Count == 0) return false;
+            if (edits.Count == 0 && drop.Count == 0) return false;
             foreach (var e in edits.OrderByDescending(e => e.pos))
                 src[e.line] = src[e.line].Substring(0, e.pos) + e.val + src[e.line].Substring(e.pos + e.len);
-            int last = src.FindLastIndex(x => x != "`");
-            lines = src.Take(last + 1).ToList();
-            replaced = edits.Count;
+            src = src.Where((x, i) => !drop.Contains(i) && x != "`").ToList();
+            lines = src;
+            replaced = edits.Count + drop.Count;
             return true;
         }
+
+        /// <summary>Как значение выглядит в тексте: множитель от 100 — сотыми.</summary>
+        private static double Shown(double v, bool mul) => mul && v >= 100 ? v / 100 : v;
 
         // ------------------------------------------------------------ артефакты и синергии
 

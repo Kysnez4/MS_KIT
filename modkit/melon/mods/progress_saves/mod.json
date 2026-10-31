@@ -1,0 +1,10 @@
+{
+  "id": "progress_saves",
+  "name": "Сохранение прогресса",
+  "description": "Сохраняет прогресс игры в Download/ModKit/saves и загружает его обратно вместе с настройками и данными модов (кнопка «Настройки»). Копия делается и сама после каждого боя. После загрузки игра закрывается — запустите её снова.",
+  "version": "1",
+  "author": "Pavel",
+  "main": "progress_saves.dll",
+  "restartRequired": false,
+  "defaultEnabled": false
+}
